@@ -4,4 +4,4 @@
 
 cd ~/esShardBalancer
 export PYTHONPATH=.
-python27 resources/scripts/balance.py --settings=resources/config/staging/balance.json
+nohup python27 balance.py --settings=resources/config/staging/balance.json &
