@@ -3,13 +3,7 @@
         {
             "name":"spot",
             "risky":true,
-            "shards":2,
-            "indices":[
-                {
-                    "name": "saved*",
-                    "shards": 10  // CAN NOT USE THIS UNTIL WE TURN OFF FORCED AWARENESS
-                }
-            ]
+            "shards":2
         },
         {
             "name":"primary",

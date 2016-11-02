@@ -211,7 +211,7 @@ def assign_shards(settings):
             if n.role == 'd':
                 pro = (float(n.memory) / float(n.zone.memory)) * (n.zone.shards * num_primaries)
                 min_allowed = Math.floor(pro)
-                max_allowed = Math.ceiling(pro)
+                max_allowed = Math.ceiling(pro) if n.memory else 0
             else:
                 min_allowed = 0
                 max_allowed = 0
@@ -330,8 +330,8 @@ def assign_shards(settings):
             if s.status != "UNASSIGNED" or s.type != "p":
                 continue
             for z in settings.zones:
-                started_count = len([r for r in replicas if r.status in {"STARTED"} and r.node.zone.name==z.name])
-                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name==z.name])
+                started_count = len([r for r in replicas if r.status in {"STARTED"} and r.node.zone.name == z.name])
+                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == z.name])
                 if started_count >= 1 and active_count < z.shards:
                     dup_shards[z.name] += [s]
             break  # ONLY ONE SHARD PER CYCLE
@@ -342,7 +342,7 @@ def assign_shards(settings):
             Log.note("{{num}} shards can be duplicated in the {{zone}} zone", num=len(assign), zone=zone_name)
             allocate(CONCURRENT, assign, {zone_name}, "duplicate shards", 5, settings)
     else:
-        Log.note("No duplicate shards left to assign")
+        Log.note("No intra-zone duplication remaining")
 
     # LOOK FOR UNALLOCATED SHARDS
     low_risk_shards = Dict()
@@ -352,7 +352,7 @@ def assign_shards(settings):
             if s.status != "UNASSIGNED":
                 continue
             for z in settings.zones:
-                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name==z.name])
+                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == z.name])
                 if active_count < 1:
                     low_risk_shards[z.name] += [s]
             break  # ONLY ONE SHARD PER CYCLE
@@ -408,7 +408,7 @@ def assign_shards(settings):
             Log.note("{{num}} shards can be duplicated between zones", num=len(assign))
             allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards ", 7, settings)
     else:
-        Log.note("No duplicate shards left to assign")
+        Log.note("No inter-zone duplication remaining")
 
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
     total_moves = 0
@@ -442,7 +442,7 @@ def assign_shards(settings):
                 allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "not balanced", 8, settings)
     if total_moves:
         Log.note(
-            "{{num}} shards can be moved to better location within their own zone",
+            "{{num}} shards can be moved to slightly better location within their own zone",
             num=total_moves,
         )
 
