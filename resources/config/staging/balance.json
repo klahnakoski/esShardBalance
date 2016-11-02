@@ -59,7 +59,7 @@
             },
 			{
 				"class": "logging.handlers.RotatingFileHandler",
-				"filename": "./results/balance.log",
+				"filename": "~/logs/balance.log",
 				"maxBytes": 10000000,
 				"backupCount": 10,
 				"encoding": "utf8"
