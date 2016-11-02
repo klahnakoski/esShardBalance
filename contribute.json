@@ -1,6 +1,6 @@
 {
     "name": "esShardBalancer",
-    "description": "Billions of Records! Availble to query!",
+    "description": "Balance heterogeneous indexes over heterogeneous cluster zones",
     "repository": {
         "url": "https://github.com/klahnakoski/esShardBalancer",
         "license": "MPL2",

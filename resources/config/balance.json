@@ -68,7 +68,7 @@
                 "log_type": "ses",
                 "from_address": "klahnakoski@mozilla.com",
                 "to_address": "klahnakoski@mozilla.com",
-                "subject": "[ALERT][Manager] Problem with shard assignment",
+                "subject": "[ALERT][Manager] Problem with esShardBalancer",
                 "$ref": "file://~/private.json#aws_credentials"
             }
         ]
