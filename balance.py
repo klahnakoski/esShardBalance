@@ -439,7 +439,7 @@ def assign_shards(settings):
 
             if destination_zone_name and rebalance_candidate:
                 total_moves += 1
-                allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "not balanced", 8, settings)
+                allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "slightly better balance", 8, settings)
     if total_moves:
         Log.note(
             "{{num}} shards can be moved to slightly better location within their own zone",

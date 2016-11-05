@@ -59,6 +59,7 @@
             },
 			{
                 "log_type": "ses",
+                "max_interval": "5min",
                 "from_address": "klahnakoski@mozilla.com",
                 "to_address": "klahnakoski@mozilla.com",
                 "subject": "[ALERT][Manager] Problem with esShardBalancer",
