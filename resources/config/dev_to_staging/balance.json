@@ -13,7 +13,7 @@
     ],
     "nodes":[
         {
-            "name":"secondary",
+            "name":"primary",
             "disk": 0,
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }

@@ -13,14 +13,11 @@ from __future__ import unicode_literals
 
 from copy import copy
 
-import sys
-
 from pyLibrary import convert, strings
 from pyLibrary.debugs import constants
 from pyLibrary.debugs import startup
 from pyLibrary.debugs.logs import Log
-from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, unwrap, set_default, wrap_leaves
-from pyLibrary.dot.dicts import leaves
+from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves
 from pyLibrary.env import http
 from pyLibrary.maths import Math
 from pyLibrary.maths.randoms import Random
