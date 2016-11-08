@@ -68,7 +68,7 @@
                 "max_interval": "5min",
                 "from_address": "klahnakoski@mozilla.com",
                 "to_address": "klahnakoski@mozilla.com",
-                "subject": "[ALERT][Manager] Problem with esShardBalancer",
+                "subject": "[ALERT][DEV] Problem with esShardBalancer",
                 "$ref": "file://~/private.json#aws_credentials"
             }
         ]

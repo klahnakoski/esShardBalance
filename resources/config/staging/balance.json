@@ -13,7 +13,7 @@
     ],
     "nodes":[
         {
-            "name":"primary",
+            "name":"tertiary",
             "disk": 0,
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }
@@ -69,7 +69,7 @@
                 "max_interval": "5min",
                 "from_address": "klahnakoski@mozilla.com",
                 "to_address": "klahnakoski@mozilla.com",
-                "subject": "[ALERT][DEV] Problem with esShardBalancer",
+                "subject": "[ALERT][Manager] Problem with esShardBalancer",
                 "$ref": "file://~/private.json#aws_credentials"
             }
         ]
