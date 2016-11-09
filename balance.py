@@ -408,40 +408,43 @@ def assign_shards(settings):
         Log.note("No inter-zone duplication remaining")
 
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
-    total_moves = 0
-    for index_name in set(shards.index):
-        for z in set([n.zone.name for n in nodes]):
-            rebalance_candidate = None  # MOVE ONLY ONE SHARD, PER INDEX, PER ZONE, AT A TIME
-            most_shards = 0  # WE WANT TO OFFLOAD THE NODE WITH THE MOST SHARDS
-            destination_zone_name = None
+    # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
+    # IT WILL ALTERNATE SHARDS (CONTINUALLY TRYING TO FILL SPACE, BUT MAKING A HOLE ELSEWHERE)
+    if not rebalance_candidates:
+        total_moves = 0
+        for index_name in set(shards.index):
+            for z in set([n.zone.name for n in nodes]):
+                rebalance_candidate = None  # MOVE ONLY ONE SHARD, PER INDEX, PER ZONE, AT A TIME
+                most_shards = 0  # WE WANT TO OFFLOAD THE NODE WITH THE MOST SHARDS
+                destination_zone_name = None
 
-            for n in nodes:
-                if n.zone.name != z:
-                    continue
+                for n in nodes:
+                    if n.zone.name != z:
+                        continue
 
-                alloc = allocation[index_name, n.name]
-                if (n.name, index_name) in overloaded_zone_index_pairs:
-                    continue
-                if not alloc.shards or len(alloc.shards) < alloc.min_allowed:
-                    destination_zone_name = z
-                    continue
-                started_shards = [r for r in alloc.shards if r.status in {"STARTED"}]
-                if most_shards >= len(started_shards):
-                    continue
+                    alloc = allocation[index_name, n.name]
+                    if (n.name, index_name) in overloaded_zone_index_pairs:
+                        continue
+                    if not alloc.shards or len(alloc.shards) < alloc.min_allowed:
+                        destination_zone_name = z
+                        continue
+                    started_shards = [r for r in alloc.shards if r.status in {"STARTED"}]
+                    if most_shards >= len(started_shards):
+                        continue
 
-                if Math.max(1, alloc.min_allowed) < len(started_shards):
-                    shard = started_shards[0]
-                    rebalance_candidate = shard
-                    most_shards = len(started_shards)
+                    if Math.max(1, alloc.min_allowed) < len(started_shards):
+                        shard = started_shards[0]
+                        rebalance_candidate = shard
+                        most_shards = len(started_shards)
 
-            if destination_zone_name and rebalance_candidate:
-                total_moves += 1
-                allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "slightly better balance", 8, settings)
-    if total_moves:
-        Log.note(
-            "{{num}} shards can be moved to slightly better location within their own zone",
-            num=total_moves,
-        )
+                if destination_zone_name and rebalance_candidate:
+                    total_moves += 1
+                    allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "slightly better balance", 8, settings)
+        if total_moves:
+            Log.note(
+                "{{num}} shards can be moved to slightly better location within their own zone",
+                num=total_moves,
+            )
 
     _allocate(relocating, path, nodes, shards, allocation)
 

@@ -1,5 +1,5 @@
 # esShardBalancer
-Balance heterogeneous indexes over heterogeneous cluster zones
+Balance heterogeneous indexes using heterogeneous nodes in heterogeneous cluster zones
 
 ## Overview
 
@@ -12,7 +12,7 @@ The esShardBalancer disables the ES shard balancer, and adds new abilities:
 * Balance by node size - The shards of each index are spread evenly over the 
 nodes in a cluster based on the amount of memory each node has.
 * Indexes are given recovery priority - Highest priority indexes are recovered 
-and rebalanced first, some data is more valuable because it used more, or it 
+and rebalanced first.  Some data is more valuable because it used more, or it 
 is harder to reindex.
 * Zones can be labeled "risky" - Elasticsearch supports the concept of cluster 
 zones, and this shard balancer will ensure there is at least one copy of each 
