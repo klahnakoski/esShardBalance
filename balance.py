@@ -403,7 +403,7 @@ def assign_shards(settings):
         for zone_name, assign in dup_shards.items():
             # Log.note("{{dups}}", dups=assign)
             Log.note("{{num}} shards can be duplicated between zones", num=len(assign))
-            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards ", 7, settings)
+            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 7, settings)
     else:
         Log.note("No inter-zone duplication remaining")
 
