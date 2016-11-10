@@ -13,17 +13,25 @@ from __future__ import unicode_literals
 
 from copy import copy
 
-from pyLibrary import convert, strings
-from pyLibrary.debugs import constants
-from pyLibrary.debugs import startup
-from pyLibrary.debugs.logs import Log
-from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves
+import boto
+import boto.ec2
+import boto.vpc
+from fabric.context_managers import hide
+from fabric.operations import sudo
+from fabric.state import env
+
+from pyLibrary import convert, strings, jsons
+from pyLibrary.debugs import constants, startup
+
+from pyLibrary.debugs.logs import Log, machine_metadata
+from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves, unwrap, Null
 from pyLibrary.env import http
 from pyLibrary.maths import Math
 from pyLibrary.maths.randoms import Random
 from pyLibrary.queries import jx
 from pyLibrary.queries.unique_index import UniqueIndex
 from pyLibrary.thread.threads import Thread, Signal
+from pyLibrary.times.dates import Date
 
 DEBUG = True
 
@@ -36,6 +44,7 @@ current_moving_shards = DictList()  # BECAUSE ES WILL NOT TELL US WHERE THE SHAR
 DEAD = "DEAD"
 ALIVE = "ALIVE"
 last_known_node_status = Dict()
+last_scrubbing = Dict()
 
 
 def assign_shards(settings):
@@ -446,15 +455,85 @@ def assign_shards(settings):
                 num=total_moves,
             )
 
-    _allocate(relocating, path, nodes, shards, allocation)
+    _allocate(relocating, path, nodes, shards, allocation, settings)
 
 
-def reset_node(node):
+local_ip_to_public_ip_map = Null
+
+
+def get_ip_map():
+    global local_ip_to_public_ip_map;
+    if local_ip_to_public_ip_map:
+        return
+    param = jsons.ref.get("file://~/private.json#aws_credentials")
+    param = dict(
+        region_name=param.region,
+        aws_access_key_id=unwrap(param.aws_access_key_id),  # TRUE None REQUIRED
+        aws_secret_access_key=unwrap(param.aws_secret_access_key)  # TRUE None REQUIRED
+    )
+    ec2_conn = boto.ec2.connect_to_region(**param)
+    reservations = ec2_conn.get_all_instances()
+    local_ip_to_public_ip_map = {
+        ii.private_ip_address: i.ip_address
+        for r in reservations
+        for i in r.instances
+        for ii in i.interfaces
+    }
+
+
+def clean_out_unused_shards(node, all_shards, settings):
+    if not node.name.startswith("spot"):
+        return
+    if last_scrubbing[node.name] > Date("now-12hour"):
+        return
+    last_scrubbing[node.name] = Date.now()
+    Log.warning("{{node}} is full!", node=node.name)
+    expected_shards = [
+        (r.index, r.i)
+        for r, _ in jx.groupby(jx.filter(all_shards, {"eq": {"node.name": node.name}}), ["index", "i"])
+    ]
+
     # FIND THE IP
-    # VERIFY IT IS UNRESPONSIVE
-    # LOG IN, AND RESET
 
-    pass
+    IP = node.ip
+    if not machine_metadata.aws_instance_type:
+        get_ip_map()
+        IP = local_ip_to_public_ip_map.get(node.ip, node.ip)
+    if not IP:
+        Log.error("Expecting an ip address for {{node}}", node=node.name)
+
+    # SETUP FABRIC
+    for k, v in settings.connect.items():
+        env[k] = v
+    env.host_string = IP
+    env.abort_exception = Log.error
+
+    # LOGIN TO FIND SHARDS
+    with hide('output'):
+        directories = sudo("find /data* -type d")
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/_state
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/translog
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/index
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/_state
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
+    # /data1/logs
+    # /data1/lost+found
+    for dir_ in directories.split("\n"):
+        dir_ = dir_.strip()
+        path = dir_.split("/")
+        if len(path) != 8:
+            continue
+        index = path[6]
+        shard = int(path[7])
+        if (index, shard) in expected_shards:
+            continue
+
+        Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
+        sudo("rm -fr " + dir_)
 
 
 ALLOCATION_REQUESTS = []
@@ -497,7 +576,7 @@ def net_shards_to_move(concurrent, shards, relocating):
     return net, sorted_shards
 
 
-def _allocate(relocating, path, nodes, all_shards, allocation):
+def _allocate(relocating, path, nodes, all_shards, allocation, settings):
     moves = jx.sort(ALLOCATION_REQUESTS, ["mode_priority", "replication_priority", "shard.index_size", "shard.i"])
 
     busy_nodes = Dict()
@@ -546,6 +625,7 @@ def _allocate(relocating, path, nodes, all_shards, allocation):
             elif n.disk_free == 0:
                 list_node_weight[i] = 0
             elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10:
+                clean_out_unused_shards(n, all_shards, settings)
                 list_node_weight[i] = 0
             elif len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
@@ -572,7 +652,7 @@ def _allocate(relocating, path, nodes, all_shards, allocation):
             all_shards
         )
         if len(existing) >= nodes[destination_node].zone.shards:
-            Log.error("should nt happen")
+            Log.error("should not happen")
 
         if shard.status == "UNASSIGNED":
             # destination_node = "secondary"
