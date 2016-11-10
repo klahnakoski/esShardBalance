@@ -488,12 +488,12 @@ def get_ip_map():
 def clean_out_unused_shards(nodes, shards, settings):
     for node in nodes:
         try:
-            _clean_out_one_shard(node, shards, settings)
+            _clean_out_one_node(node, shards, settings)
         except Exception, e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
 
 
-def _clean_out_one_shard(node, all_shards, settings):
+def _clean_out_one_node(node, all_shards, settings):
     # if not node.name.startswith("spot"):
     #     return
     if last_scrubbing[node.name] > Date("now-12hour"):
@@ -549,7 +549,12 @@ def _clean_out_one_shard(node, all_shards, settings):
             continue
 
         Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
-        sudo("rm -fr " + dir_)
+        with hide('output'):
+            young_files = unicode(sudo("find "+dir_+" -cmin -120 -type f"))
+            if young_files:
+                Log.error("attempt to remove young files")
+            else:
+                sudo("rm -fr " + dir_)
 
 
 ALLOCATION_REQUESTS = []
