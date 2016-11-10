@@ -545,9 +545,11 @@ def _clean_out_one_shard(node, all_shards, settings):
         shard = int(path[7])
         if (index, shard) in expected_shards:
             continue
+        if not any(index.startswith(p) for p in ["coverage2", "unittest201610"]):
+            continue
 
         Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
-        # sudo("rm -fr " + dir_)
+        sudo("rm -fr " + dir_)
 
 
 ALLOCATION_REQUESTS = []
