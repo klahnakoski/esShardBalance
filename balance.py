@@ -466,7 +466,9 @@ local_ip_to_public_ip_map = Null
 
 
 def get_ip_map():
-    global local_ip_to_public_ip_map;
+    global local_ip_to_public_ip_map
+
+    Log.note("getting public/private ip map")
     if local_ip_to_public_ip_map:
         return
     param = jsons.ref.get("file://~/private.json#aws_credentials")
@@ -506,13 +508,14 @@ def _clean_out_one_node(node, all_shards, settings):
     ]
 
     # FIND THE IP
-
     IP = node.ip
     if not machine_metadata.aws_instance_type:
         get_ip_map()
         IP = local_ip_to_public_ip_map.get(node.ip, node.ip)
     if not IP:
         Log.error("Expecting an ip address for {{node}}", node=node.name)
+
+    Log.note("using ip {{ip}}", ip=IP)
 
     # SETUP FABRIC
     for k, v in settings.connect.items():
