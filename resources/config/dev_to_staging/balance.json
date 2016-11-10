@@ -1,9 +1,9 @@
 {
     "zones":[
         {
-            "name":"spot",
-            "risky":true,
-            "shards":2
+            "name": "spot",
+            "risky": true,
+            "shards": 2
         },
         {
             "name":"primary",
@@ -13,7 +13,7 @@
     ],
     "nodes":[
         {
-            "name":"primary",
+            "name":"tertiary",
             "disk": 0,
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }

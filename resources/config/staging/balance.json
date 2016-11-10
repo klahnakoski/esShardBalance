@@ -18,6 +18,16 @@
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }
     ],
+    "connect": {
+        //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
+        "user": "ec2-user",
+        "key_filename": "~/.ssh/aws-pulse-logger.pem",
+        "disable_known_hosts": true,
+        "host_string": "",
+        "port": 22,
+        "password": "",
+        "banner_timeout": 30
+    },
     "finally":{
         "/_cluster/settings": [
             {"transient": {
