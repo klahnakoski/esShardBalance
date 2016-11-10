@@ -16,6 +16,7 @@ from copy import copy
 import boto
 import boto.ec2
 import boto.vpc
+from fabric.api import settings as fabric_settings
 from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
@@ -193,6 +194,9 @@ def assign_shards(settings):
         else:
             # COULD NOT BE FOUND
             current_moving_shards.remove(m)
+
+    # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
+    clean_out_unused_shards(nodes, shards, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
@@ -481,13 +485,21 @@ def get_ip_map():
     }
 
 
-def clean_out_unused_shards(node, all_shards, settings):
-    if not node.name.startswith("spot"):
-        return
+def clean_out_unused_shards(nodes, shards, settings):
+    for node in nodes:
+        try:
+            _clean_out_one_shard(node, shards, settings)
+        except Exception, e:
+            Log.warning("can not clear {{node}}", node=node.name, cause=e)
+
+
+def _clean_out_one_shard(node, all_shards, settings):
+    # if not node.name.startswith("spot"):
+    #     return
     if last_scrubbing[node.name] > Date("now-12hour"):
         return
     last_scrubbing[node.name] = Date.now()
-    Log.warning("{{node}} is full!", node=node.name)
+
     expected_shards = [
         (r.index, r.i)
         for r, _ in jx.groupby(jx.filter(all_shards, {"eq": {"node.name": node.name}}), ["index", "i"])
@@ -509,8 +521,10 @@ def clean_out_unused_shards(node, all_shards, settings):
     env.abort_exception = Log.error
 
     # LOGIN TO FIND SHARDS
-    with hide('output'):
-        directories = sudo("find /data* -type d")
+    directories = Null
+    with fabric_settings(warn_only=True):
+        with hide('output'):
+            directories = sudo("find /data* -type d")
     # /data1/active-data/nodes/0/indices/jobs20161001_000000
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/11
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/_state
@@ -533,7 +547,7 @@ def clean_out_unused_shards(node, all_shards, settings):
             continue
 
         Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
-        sudo("rm -fr " + dir_)
+        # sudo("rm -fr " + dir_)
 
 
 ALLOCATION_REQUESTS = []
@@ -625,7 +639,6 @@ def _allocate(relocating, path, nodes, all_shards, allocation, settings):
             elif n.disk_free == 0:
                 list_node_weight[i] = 0
             elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10:
-                clean_out_unused_shards(n, all_shards, settings)
                 list_node_weight[i] = 0
             elif len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
