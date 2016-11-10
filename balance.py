@@ -467,10 +467,9 @@ local_ip_to_public_ip_map = Null
 
 def get_ip_map():
     global local_ip_to_public_ip_map
-
-    Log.note("getting public/private ip map")
     if local_ip_to_public_ip_map:
         return
+    Log.note("getting public/private ip map")
     param = jsons.ref.get("file://~/private.json#aws_credentials")
     param = dict(
         region_name=param.region,
