@@ -651,6 +651,8 @@ def _allocate(relocating, path, nodes, all_shards, allocation, settings):
                 list_node_weight[i] = 0
             elif len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
+            elif move.reason == "slightly better balance" and len(alloc.shards) >= alloc.min_allowed:
+                list_node_weight[i] = 0
 
         if Math.sum(list_node_weight) == 0:
             continue  # NO SHARDS CAN ACCEPT THIS
