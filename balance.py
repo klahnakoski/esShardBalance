@@ -547,7 +547,7 @@ def _clean_out_one_node(node, all_shards, settings):
         shard = int(path[7])
         if (index, shard) in expected_shards:
             continue
-        if not any(index.startswith(p) for p in ["coverage2", "unittest201610"]):
+        if not any(index.startswith(p) for p in ["coverage2", "unittest201610", "perf", "treeherder"]):
             continue
 
         Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
