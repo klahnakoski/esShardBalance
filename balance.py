@@ -420,27 +420,8 @@ def assign_shards(settings):
     else:
         Log.note("No inter-zone duplication remaining")
 
-    # SOME NODES MAY BE TOO FULL
-    dup_shards = Dict()
-    for _, replicas in jx.groupby(shards, ["index", "i"]):
-        # WE CAN ASSIGN THIS REPLICA WITHIN THE SAME ZONE
-        for s in replicas:
-            if s.status != "UNASSIGNED":
-                continue
-            for z in settings.zones:
-                started_count = len([r for r in replicas if r.status in {"STARTED"} and r.node.zone.name==z.name])
-                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name==z.name])
-                if started_count >= 1 and active_count < z.shards:
-                    dup_shards[z.name] += [s]
-            break  # ONLY ONE SHARD PER CYCLE
+    # TODO: SOME NODES MAY BE TOO FULL
 
-    if dup_shards:
-        for zone_name, assign in dup_shards.items():
-            # Log.note("{{dups}}", dups=assign)
-            Log.note("{{num}} shards can be duplicated between zones", num=len(assign))
-            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 7, settings)
-    else:
-        Log.note("No inter-zone duplication remaining")
 
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
     # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
