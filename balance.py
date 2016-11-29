@@ -161,7 +161,7 @@ def assign_shards(settings):
             # shards.append(set_default({"node": destination}, s))
         s.node = nodes[s.node]
 
-    # Log.note("{{shards}}", shards=shards)
+    Log.note("TOTAL SHARDS: {{num}}", num=len(shards))
     Log.note("{{num}} shards moving", num=len(current_moving_shards))
 
     # TODO: MAKE ZONE OBJECTS TO STORE THE NUMBER OF REPLICAS
@@ -863,7 +863,8 @@ def main():
 
         response = http.put(
             path + "/_cluster/settings",
-            data='{"persistent": {"cluster.routing.allocation.enable": "none"}}'
+            data='{"persistent": {"cluster.routing.allocation.enable": "none"}, "transient":{"cluster.routing.allocation.awareness.force.zone.values":""}}'
+
         )
         Log.note("DISABLE SHARD MOVEMENT: {{result}}", result=response.all_content)
 
