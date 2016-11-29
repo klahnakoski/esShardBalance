@@ -173,7 +173,7 @@ def assign_shards(settings):
             r.size = size
 
     relocating = wrap([s for s in shards if s.status in ("RELOCATING", "INITIALIZING")])
-    Log.note("{{num}} shards in motion", num=len(relocating))
+    Log.note("{{num}} shards allocating", num=len(relocating))
 
     for m in copy(current_moving_shards):
         for s in shards:
