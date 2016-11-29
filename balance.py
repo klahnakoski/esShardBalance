@@ -570,8 +570,8 @@ def _clean_out_one_node(node, all_shards, settings):
         shard = int(path[7])
         if (index, shard) in expected_shards:
             continue
-        if not any(index.startswith(p) for p in ["pulse", "task", "jobs", "coverage2", "unittest201610", "perf", "treeherder"]):
-            continue
+        # if not any(index.startswith(p) for p in ["pulse", "task", "jobs", "coverage2", "unittest201610", "perf", "treeherder"]):
+        #     continue
 
         with hide('output'):
             young_files = unicode(sudo("find "+dir_+" -cmin -120 -type f"))
