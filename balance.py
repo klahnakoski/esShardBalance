@@ -420,6 +420,28 @@ def assign_shards(settings):
     else:
         Log.note("No inter-zone duplication remaining")
 
+    # SOME NODES MAY BE TOO FULL
+    dup_shards = Dict()
+    for _, replicas in jx.groupby(shards, ["index", "i"]):
+        # WE CAN ASSIGN THIS REPLICA WITHIN THE SAME ZONE
+        for s in replicas:
+            if s.status != "UNASSIGNED":
+                continue
+            for z in settings.zones:
+                started_count = len([r for r in replicas if r.status in {"STARTED"} and r.node.zone.name==z.name])
+                active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name==z.name])
+                if started_count >= 1 and active_count < z.shards:
+                    dup_shards[z.name] += [s]
+            break  # ONLY ONE SHARD PER CYCLE
+
+    if dup_shards:
+        for zone_name, assign in dup_shards.items():
+            # Log.note("{{dups}}", dups=assign)
+            Log.note("{{num}} shards can be duplicated between zones", num=len(assign))
+            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 7, settings)
+    else:
+        Log.note("No inter-zone duplication remaining")
+
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
     # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
     # IT WILL ALTERNATE SHARDS (CONTINUALLY TRYING TO FILL SPACE, BUT MAKING A HOLE ELSEWHERE)
@@ -538,6 +560,7 @@ def _clean_out_one_node(node, all_shards, settings):
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
     # /data1/logs
     # /data1/lost+found
+    please_remove = []
     for dir_ in directories.split("\n"):
         dir_ = dir_.strip()
         path = dir_.split("/")
@@ -547,16 +570,21 @@ def _clean_out_one_node(node, all_shards, settings):
         shard = int(path[7])
         if (index, shard) in expected_shards:
             continue
-        if not any(index.startswith(p) for p in ["coverage2", "unittest201610", "perf", "treeherder"]):
+        if not any(index.startswith(p) for p in ["pulse", "task", "jobs", "coverage2", "unittest201610", "perf", "treeherder"]):
             continue
 
-        Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
         with hide('output'):
             young_files = unicode(sudo("find "+dir_+" -cmin -120 -type f"))
             if young_files:
                 Log.error("attempt to remove young files")
             else:
-                sudo("rm -fr " + dir_)
+                please_remove.append(dir_)
+
+    for dir_ in please_remove:
+        Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
+        with hide('output'):
+            sudo("rm -fr " + dir_)
+
 
 
 ALLOCATION_REQUESTS = []
