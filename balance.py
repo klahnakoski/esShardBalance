@@ -514,6 +514,7 @@ def clean_out_unused_shards(nodes, shards, settings):
             _clean_out_one_node(node, shards, settings)
         except Exception, e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
+    pass
 
 
 def _clean_out_one_node(node, all_shards, settings):
@@ -863,7 +864,19 @@ def main():
 
         response = http.put(
             path + "/_cluster/settings",
-            data='{"persistent": {"cluster.routing.allocation.enable": "none"}, "transient":{"cluster.routing.allocation.awareness.force.zone.values":""}}'
+            data=convert.value2json(
+                {
+                    "persistent": {
+                        "cluster.routing.allocation.enable": "none",
+                        "cluster.routing.allocation.awareness.attributes": "",
+                        "cluster.routing.allocation.awareness.force.zone.values": ""
+                    },
+                    "transient": {
+                        "cluster.routing.allocation.awareness.attributes": "",
+                        "cluster.routing.allocation.awareness.force.zone.values": ""
+                    }
+                }
+            )
 
         )
         Log.note("DISABLE SHARD MOVEMENT: {{result}}", result=response.all_content)

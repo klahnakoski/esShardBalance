@@ -14,11 +14,23 @@ nodes in a cluster based on the amount of memory each node has.
 * Indexes are given recovery priority - Highest priority indexes are recovered 
 and rebalanced first.  Some data is more valuable because it used more, or it 
 is harder to reindex.
-* Zones can be labeled "risky" - Elasticsearch supports the concept of cluster 
-zones, and this shard balancer will ensure there is at least one copy of each 
-shard in a non-risky zone
+* Zones can be labeled "risky" - This shard balancer will ensure there is at 
+least one copy of each shard in a non-risky zone
 * Zones can have different replica counts - Some zones have more resources 
 than others, so more replicas can be stored there
 
 These features allow us to run a big cluster, at a reasonable price, on a 
 heterogeneous collection of AWS spot nodes.
+
+## Important
+
+ElasticSearch zone awareness and shard balancing must be turned off. 
+esShardBalancer will attempt to do this for you at startup, but it is best
+your config file has the following settings:
+
+    cluster.routing.allocation.enable: none
+    cluster.routing.allocation.awareness.attributes: 
+    cluster.routing.allocation.awareness.force.zone.values:
+
+Notice the `awareness` attribute are blank 
+
