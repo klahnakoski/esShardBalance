@@ -69,6 +69,7 @@ def assign_shards(settings):
 
     zones = UniqueIndex("name")
     for z in settings.zones:
+        z.num_nodes=0
         zones.add(z)
 
     stats = http.get_json(path+"/_nodes/stats?all=true")
@@ -88,6 +89,9 @@ def assign_shards(settings):
     #     Log.error("missing an important index\n{{nodes|json}}", nodes=nodes)
 
     risky_zone_names = set(z.name for z in settings.zones if z.risky)
+
+    for node in nodes:
+        node.zone.num_nodes+=1
 
     # USE SETTINGS TO OVERRIDE NODE PROPERTIES
     for n in settings.nodes:
@@ -167,7 +171,10 @@ def assign_shards(settings):
     # TODO: MAKE ZONE OBJECTS TO STORE THE NUMBER OF REPLICAS
 
     # ASSIGN SIZE TO ALL SHARDS
+    red_shards = []
     for g, replicas in jx.groupby(shards, ["index", "i"]):
+        if all(r.status == "UNASSIGNED" for r in replicas):
+            red_shards.append(g)
         size = Math.MAX(replicas.size)
         for r in replicas:
             r.size = size
@@ -195,8 +202,14 @@ def assign_shards(settings):
             # COULD NOT BE FOUND
             current_moving_shards.remove(m)
 
-    # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
-    clean_out_unused_shards(nodes, shards, settings)
+    if red_shards:
+        Log.warning("Cluster is RED")
+        # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
+        # ALLOCATE SHARDS INSTEAD
+        find_and_allocate_shards(nodes, settings, red_shards)
+    else:
+        # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
+        clean_out_unused_shards(nodes, shards, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
@@ -206,9 +219,16 @@ def assign_shards(settings):
         Log.note("review replicas of {{index}}", index=g.index)
         num_primaries = len(filter(lambda r: r.type == 'p', replicas))
 
-        multiplier = Math.MAX(settings.zones.shards)
-        num_replicas = len(settings.zones) * multiplier
-        if float(len(replicas)) / float(num_primaries) < num_replicas:
+        replicas_per_zone = {}
+        for zone in zones:
+            override = wrap([i for i in settings.allocate if (i.name == g.index or (i.name.endswith("*") and g.index.startswith(i.name[:-1]))) and i.zone == zone.name])[0]
+            if override:
+                replicas_per_zone[zone.name] = Math.min(coalesce(override.shards, zone.shards), zone.num_nodes)
+            else:
+                replicas_per_zone[zone.name] = zone.shards
+
+        num_replicas = sum(replicas_per_zone.values())
+        if Math.round(float(len(replicas)) / float(num_primaries)) < num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index.recovery.initial_shards": 1})
             Log.note("Number of shards required {{index}}\n{{result}}", index=g.index, result=convert.json2value(convert.utf82unicode(response.content)))
@@ -219,20 +239,25 @@ def assign_shards(settings):
 
         for n in nodes:
             if n.role == 'd':
-                pro = (float(n.memory) / float(n.zone.memory)) * (n.zone.shards * num_primaries)
+                pro = (float(n.memory) / float(n.zone.memory)) * (replicas_per_zone[n.zone.name] * num_primaries)
                 min_allowed = Math.floor(pro)
                 max_allowed = Math.ceiling(pro) if n.memory else 0
             else:
                 min_allowed = 0
                 max_allowed = 0
 
-            allocation.add({
+            shards_in_node = list(filter(lambda r: r.node.name == n.name, replicas))
+            allocate_ = {
                 "index": g.index,
                 "node": n,
                 "min_allowed": min_allowed,
                 "max_allowed": max_allowed,
-                "shards": list(filter(lambda r: r.node.name == n.name, replicas))
-            })
+                "shards": shards_in_node
+            }
+            for sh in shards_in_node:
+                sh.allocate = allocate_  # ACTIVE SHARDS WILL HAVE ACCESS TO allocate
+
+            allocation.add(allocate_)
 
         index_size = Math.sum(replicas.size)
         for r in replicas:
@@ -262,6 +287,7 @@ def assign_shards(settings):
             # WE GET HERE WHEN AN IMPORTANT NODE IS WARMING UP ITS SHARDS
             # SINCE WE CAN NOT RECOGNIZE THE ASSIGNMENT THAT WE MAY HAVE REQUESTED LAST ITERATION
             Log.note("Delay work, cluster busy RELOCATING/INITIALIZING {{num}} shards", num=len(relocating))
+            return
         allocate(30, please_initialize, set(n.zone.name for n in nodes) - risky_zone_names, "not started", 1, settings)
     else:
         Log.note("All shards have started")
@@ -462,7 +488,7 @@ def assign_shards(settings):
                 num=total_moves,
             )
 
-    _allocate(relocating, path, nodes, shards, allocation, settings)
+    _allocate(relocating, path, nodes, shards, red_shards, allocation, settings)
 
 
 local_ip_to_public_ip_map = Null
@@ -489,13 +515,120 @@ def get_ip_map():
     }
 
 
+def find_and_allocate_shards(nodes, settings, red_shards):
+    red_shards = [(g.index, g.i) for g in red_shards]
+
+    # PICK NON-RISKY NODES FIRST
+    for node in jx.sort(list(nodes), "zone.risky"):
+
+        for d in get_node_directories(node, settings):
+            if (d.index, d.i) not in red_shards:
+                continue
+
+            command = wrap({"allocate": {
+                "index": d.index,
+                "shard": d.i,
+                "node": node.name,  # nodes[i].name,
+                "allow_primary": True
+            }})
+
+            Log.note(
+                "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, assign_to={{node}}",
+                motivation="Primary shard assign to known directory",
+                shard=d,
+                node=node.name
+            )
+
+            path = settings.elasticsearch.host + ":" + unicode(settings.elasticsearch.port)
+            response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
+            result = convert.json2value(convert.utf82unicode(response.content))
+            if response.status_code not in [200, 201] or not result.acknowledged:
+                main_reason = strings.between(result.error, "[NO", "]")
+
+                if main_reason.find("shard cannot be allocated on same node")!=-1:
+                    pass
+                    Log.note("ok: ES automatically initialized already")
+                elif main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
+                    pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
+                    Log.note("failed: zone full")
+                elif main_reason and main_reason.find("after allocation more than allowed") != -1:
+                    pass
+                    Log.note("failed: out of space")
+                elif "failed to resolve [" in result.error:
+                    # LOST A NODE WHILE SENDING UPDATES
+                    lost_node_name = strings.between(result.error, "failed to resolve [", "]").strip()
+                    Log.warning("Lost node during allocate {{node}}", node=lost_node_name)
+                    nodes[lost_node_name].zone = None
+                else:
+                    Log.warning(
+                        "{{code}} Can not move/allocate:\n\treason={{reason}}\n\tdetails={{error|quote}}",
+                        code=response.status_code,
+                        reason=main_reason,
+                        error=result.error
+                    )
+            else:
+                Log.note(
+                    "ok={{result.acknowledged}}",
+                    result=result
+                )
+
+
+
+def get_node_directories(node, settings):
+    """
+    :param node:
+    :param settings:
+    :return: LIST OF SHARDS AND THIER DIRECTORIES
+    """
+    # FIND THE IP
+    IP = node.ip
+    if not machine_metadata.aws_instance_type:
+        get_ip_map()
+        IP = local_ip_to_public_ip_map.get(node.ip, node.ip)
+    if not IP:
+        Log.error("Expecting an ip address for {{node}}", node=node.name)
+
+    Log.note("using ip {{ip}}", ip=IP)
+
+    # SETUP FABRIC
+    for k, v in settings.connect.items():
+        env[k] = v
+    env.host_string = IP
+    env.abort_exception = Log.error
+
+    # LOGIN TO FIND SHARDS
+    directories = Null
+    with fabric_settings(warn_only=True):
+        with hide('output'):
+            directories = sudo("find /data* -type d")
+
+    output = DictList()
+    for dir_ in directories.split("\n"):
+        dir_ = dir_.strip()
+        path = dir_.split("/")
+        if len(path) != 8:
+            continue
+        index = path[6]
+        shard = int(path[7])
+        output.append({
+            "index":index,
+            "i": shard,
+            "dir":dir_
+        })
+
+    return output
+
+
 def clean_out_unused_shards(nodes, shards, settings):
+    if settings.disable_cleaner:
+        return
     for node in nodes:
         try:
-            _clean_out_one_node(node, shards, settings)
+            cleaned = _clean_out_one_node(node, shards, settings)
+            if cleaned:
+                break
         except Exception, e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
-    pass
 
 
 def _clean_out_one_node(node, all_shards, settings):
@@ -567,6 +700,7 @@ def _clean_out_one_node(node, all_shards, settings):
         with hide('output'):
             sudo("rm -fr " + dir_)
 
+    return bool(please_remove)
 
 
 ALLOCATION_REQUESTS = []
@@ -609,7 +743,7 @@ def net_shards_to_move(concurrent, shards, relocating):
     return net, sorted_shards
 
 
-def _allocate(relocating, path, nodes, all_shards, allocation, settings):
+def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, settings):
     moves = jx.sort(ALLOCATION_REQUESTS, ["mode_priority", "replication_priority", "shard.index_size", "shard.i"])
 
     busy_nodes = Dict()
@@ -618,7 +752,7 @@ def _allocate(relocating, path, nodes, all_shards, allocation, settings):
             busy_nodes[s.node.name] += s.size
 
     done = set()  # (index, i) pair
-
+    Log.note("Considering {{num}} moves", num=len(moves))
     for move in moves:
         shard = move.shard
         if (shard.index, shard.i) in done:
@@ -659,7 +793,7 @@ def _allocate(relocating, path, nodes, all_shards, allocation, settings):
                 list_node_weight[i] = 0
             elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10:
                 list_node_weight[i] = 0
-            elif len(alloc.shards) >= alloc.max_allowed:
+            elif move.mode_priority > 1 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
             elif move.reason == "slightly better balance" and len(alloc.shards) >= alloc.min_allowed:
                 list_node_weight[i] = 0
@@ -694,7 +828,7 @@ def _allocate(relocating, path, nodes, all_shards, allocation, settings):
                 "index": shard.index,
                 "shard": shard.i,
                 "node": destination_node,  # nodes[i].name,
-                "allow_primary": True
+                "allow_primary": bool(red_shards)
             }})
         elif shard.status == "STARTED":
             _move = {

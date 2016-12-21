@@ -1,9 +1,11 @@
 {
+    "disable_cleaner": true,
     "zones":[
         {
             "name": "spot",
             "risky": true,
-            "shards": 2
+            "shards": 2,
+
         },
         {
             "name":"primary",
@@ -18,6 +20,13 @@
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }
     ],
+//	"allocate":[
+//		{
+//			"name": "saved_queries*",
+//			"zone": "spot",
+//			"shards": 10
+//		}
+//	],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
         "user": "ec2-user",
