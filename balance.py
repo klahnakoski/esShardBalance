@@ -601,6 +601,15 @@ def get_node_directories(node, settings):
     with fabric_settings(warn_only=True):
         with hide('output'):
             directories = sudo("find /data* -type d")
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/_state
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/translog
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/index
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/_state
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
+    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
 
     output = DictList()
     for dir_ in directories.split("\n"):
@@ -626,7 +635,7 @@ def clean_out_unused_shards(nodes, shards, settings):
         try:
             cleaned = _clean_out_one_node(node, shards, settings)
             if cleaned:
-                break
+                break  # EXIT EARLY SO WE CAN GET TO THE JOB OF BALANCING
         except Exception, e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
 
@@ -635,7 +644,7 @@ def _clean_out_one_node(node, all_shards, settings):
     # if not node.name.startswith("spot"):
     #     return
     if last_scrubbing[node.name] > Date("now-12hour"):
-        return
+        return False  # NO WORK DONE
     last_scrubbing[node.name] = Date.now()
 
     expected_shards = [
@@ -643,57 +652,17 @@ def _clean_out_one_node(node, all_shards, settings):
         for r, _ in jx.groupby(jx.filter(all_shards, {"eq": {"node.name": node.name}}), ["index", "i"])
     ]
 
-    # FIND THE IP
-    IP = node.ip
-    if not machine_metadata.aws_instance_type:
-        get_ip_map()
-        IP = local_ip_to_public_ip_map.get(node.ip, node.ip)
-    if not IP:
-        Log.error("Expecting an ip address for {{node}}", node=node.name)
-
-    Log.note("using ip {{ip}}", ip=IP)
-
-    # SETUP FABRIC
-    for k, v in settings.connect.items():
-        env[k] = v
-    env.host_string = IP
-    env.abort_exception = Log.error
-
-    # LOGIN TO FIND SHARDS
-    directories = Null
-    with fabric_settings(warn_only=True):
-        with hide('output'):
-            directories = sudo("find /data* -type d")
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/_state
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/translog
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/index
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/_state
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
-    # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
-    # /data1/logs
-    # /data1/lost+found
     please_remove = []
-    for dir_ in directories.split("\n"):
-        dir_ = dir_.strip()
-        path = dir_.split("/")
-        if len(path) != 8:
+    for d in get_node_directories(node, settings):
+        if (d.index, d.i) in expected_shards:
             continue
-        index = path[6]
-        shard = int(path[7])
-        if (index, shard) in expected_shards:
-            continue
-        # if not any(index.startswith(p) for p in ["pulse", "task", "jobs", "coverage2", "unittest201610", "perf", "treeherder"]):
-        #     continue
 
         with hide('output'):
-            young_files = unicode(sudo("find "+dir_+" -cmin -120 -type f"))
+            young_files = unicode(sudo("find "+d.dir+" -cmin -120 -type f"))
             if young_files:
                 Log.error("attempt to remove young files")
             else:
-                please_remove.append(dir_)
+                please_remove.append(d.dir)
 
     for dir_ in please_remove:
         Log.note("Scrubbing node {{node}}: Remove {{path}}", node=node.name, path=dir_)
