@@ -18,6 +18,13 @@
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }
     ],
+	"allocate":[
+		{
+			"name": "saved_queries*",
+			"zone": "spot",
+			"shards": 5
+		}
+	],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
         "user": "ec2-user",
