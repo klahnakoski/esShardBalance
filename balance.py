@@ -25,7 +25,7 @@ from pyLibrary import convert, strings, jsons
 from pyLibrary.debugs import constants, startup
 
 from pyLibrary.debugs.logs import Log, machine_metadata
-from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves, unwrap, Null
+from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves, unwrap, Null, literal_field
 from pyLibrary.env import http
 from pyLibrary.maths import Math
 from pyLibrary.maths.randoms import Random
@@ -214,20 +214,20 @@ def assign_shards(settings):
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
     allocation = UniqueIndex(["index", "node.name"])
+    replicas_per_zone = {}
 
     for g, replicas in jx.groupby(shards, "index"):
         Log.note("review replicas of {{index}}", index=g.index)
         num_primaries = len(filter(lambda r: r.type == 'p', replicas))
 
-        replicas_per_zone = {}
         for zone in zones:
             override = wrap([i for i in settings.allocate if (i.name == g.index or (i.name.endswith("*") and g.index.startswith(i.name[:-1]))) and i.zone == zone.name])[0]
             if override:
-                replicas_per_zone[zone.name] = Math.min(coalesce(override.shards, zone.shards), zone.num_nodes)
+                wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = Math.min(coalesce(override.shards, zone.shards), zone.num_nodes)
             else:
-                replicas_per_zone[zone.name] = zone.shards
+                wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = zone.shards
 
-        num_replicas = sum(replicas_per_zone.values())
+        num_replicas = sum(replicas_per_zone[g.index].values())
         if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index.recovery.initial_shards": 1})
@@ -239,7 +239,7 @@ def assign_shards(settings):
 
         for n in nodes:
             if n.role == 'd':
-                pro = (float(n.memory) / float(n.zone.memory)) * (replicas_per_zone[n.zone.name] * num_primaries)
+                pro = (float(n.memory) / float(n.zone.memory)) * (replicas_per_zone[g.index][n.zone.name] * num_primaries)
                 min_allowed = Math.floor(pro)
                 max_allowed = Math.ceiling(pro) if n.memory else 0
             else:
@@ -368,7 +368,7 @@ def assign_shards(settings):
             for z in settings.zones:
                 started_count = len([r for r in replicas if r.status in {"STARTED"} and r.node.zone.name == z.name])
                 active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == z.name])
-                if started_count >= 1 and active_count < z.shards:
+                if started_count >= 1 and active_count < replicas_per_zone[g.index][z.name]:
                     dup_shards[z.name] += [s]
             break  # ONLY ONE SHARD PER CYCLE
 
@@ -389,7 +389,7 @@ def assign_shards(settings):
                 continue
             for z in settings.zones:
                 active_count = len([r for r in replicas if r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == z.name])
-                if active_count < 1:
+                if active_count < replicas_per_zone[g.index][z.name]:
                     low_risk_shards[z.name] += [s]
             break  # ONLY ONE SHARD PER CYCLE
 

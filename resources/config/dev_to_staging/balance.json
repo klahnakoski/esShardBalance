@@ -21,11 +21,16 @@
         }
     ],
 	"allocate":[
-		{
-			"name": "saved_queries*",
-			"zone": "spot",
-			"shards": 5
-		}
+        {
+            "name": "saved_queries*",
+            "zone": "spot",
+            "shards": 5
+        },
+        {
+            "name": "repo*",
+            "zone": "spot",
+            "shards": 3
+        }
 	],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT

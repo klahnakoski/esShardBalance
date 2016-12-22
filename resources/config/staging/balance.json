@@ -23,6 +23,11 @@
 			"name": "saved_queries*",
 			"zone": "spot",
 			"shards": 5
+        },
+        {
+            "name": "repo*",
+            "zone": "spot",
+            "shards": 3
 		}
 	],
     "connect": {
