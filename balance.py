@@ -32,6 +32,7 @@ from pyLibrary.maths.randoms import Random
 from pyLibrary.queries import jx
 from pyLibrary.queries.unique_index import UniqueIndex
 from pyLibrary.thread.threads import Thread, Signal
+from pyLibrary.thread.till import Till
 from pyLibrary.times.dates import Date
 
 DEBUG = True
@@ -979,7 +980,7 @@ def main():
                     assign_shards(settings)
                 except Exception, e:
                     Log.warning("Not expected", cause=e)
-                Thread.sleep(seconds=30, please_stop=please_stop)
+                (Till(seconds=30) | please_stop).wait()
 
         Thread.run("loop", loop, please_stop=please_stop)
         Thread.wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
