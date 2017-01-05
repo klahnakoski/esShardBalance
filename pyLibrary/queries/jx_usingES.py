@@ -14,12 +14,12 @@ from __future__ import unicode_literals
 from collections import Mapping
 
 from pyLibrary import convert
-from pyLibrary.debugs.exceptions import Except
-from pyLibrary.debugs.logs import Log
-from pyLibrary.dot import coalesce, split_field, literal_field, unwraplist, join_field
-from pyLibrary.dot import wrap, listwrap
-from pyLibrary.dot.dicts import Dict
-from pyLibrary.dot.lists import DictList
+from MoLogs.exceptions import Except
+from MoLogs import Log
+from pyDots import coalesce, split_field, literal_field, unwraplist, join_field
+from pyDots import wrap, listwrap
+from pyDots import Data
+from pyDots.lists import FlatList
 from pyLibrary.env import elasticsearch, http
 from pyLibrary.meta import use_settings
 from pyLibrary.queries import jx, containers, Schema
@@ -78,7 +78,7 @@ class FromES(Container):
 
         self.meta = FromESMetadata(settings=settings)
         self.settings.type = self._es.settings.type
-        self.edges = Dict()
+        self.edges = Data()
         self.worker = None
 
         columns = self.get_columns(table_name=name)
@@ -100,13 +100,13 @@ class FromES(Container):
         output._es = es
         return output
 
-    def as_dict(self):
+    def __data__(self):
         settings = self.settings.copy()
         settings.settings = None
         return settings
 
     def __json__(self):
-        return convert.value2json(self.as_dict())
+        return convert.value2json(self.__data__())
 
     def __enter__(self):
         Log.error("No longer used")
@@ -184,7 +184,7 @@ class FromES(Container):
         try:
             return self.meta.get_columns(table_name=table_name, column_name=column_name)
         except Exception:
-            return DictList.EMPTY
+            return FlatList.EMPTY
 
     def addDimension(self, dim):
         if isinstance(dim, list):
@@ -232,7 +232,7 @@ class FromES(Container):
         })
 
         # SCRIPT IS SAME FOR ALL (CAN ONLY HANDLE ASSIGNMENT TO CONSTANT)
-        scripts = DictList()
+        scripts = FlatList()
         for k, v in command.set.items():
             if not is_keyword(k):
                 Log.error("Only support simple paths for now")

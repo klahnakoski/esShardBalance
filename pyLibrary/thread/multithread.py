@@ -16,8 +16,8 @@ from collections import Iterable
 from types import GeneratorType
 
 from pyLibrary import convert
-from pyLibrary.dot import coalesce
-from pyLibrary.debugs.logs import Log
+from pyDots import coalesce
+from MoLogs import Log
 from pyLibrary.thread.threads import Queue, Thread
 from pyLibrary.times.timer import Timer
 
