@@ -23,10 +23,9 @@ from copy import copy
 from datetime import datetime, timedelta
 from time import sleep
 
-from pyLibrary import strings
-from pyLibrary.debugs.exceptions import Except, suppress_exception
-from pyLibrary.debugs.profiles import CProfiler
-from pyLibrary.dot import coalesce, Dict, unwraplist, Null
+from MoLogs.exceptions import Except, suppress_exception
+from MoLogs.profiles import CProfiler
+from pyDots import coalesce, Data, unwraplist, Null
 from pyLibrary.thread.lock import Lock
 from pyLibrary.thread.signal import Signal
 from pyLibrary.thread.till import Till
@@ -49,8 +48,8 @@ def _late_import():
     global _Except
     global _Log
 
-    from pyLibrary.debugs.exceptions import Except as _Except
-    from pyLibrary.debugs.logs import Log as _Log
+    from MoLogs.exceptions import Except as _Except
+    from MoLogs import Log as _Log
 
     _ = _convert
     _ = _Except
@@ -211,16 +210,13 @@ class Queue(object):
         if till is not None and not isinstance(till, Signal):
             _Log.error("expecting a signal")
 
-        while self.keep_running:
-            with self.lock:
+        with self.lock:
+            while self.keep_running:
                 if self.queue:
                     value = self.queue.popleft()
                     return value
-
-                self.lock.wait(till=till)
-            if self.keep_running:
-                return None
-
+                if not self.lock.wait(till=till):
+                    return None
         if DEBUG or not self.silent:
             _Log.note(self.name + " queue stopped")
         return Thread.STOP
@@ -449,13 +445,13 @@ class Thread(object):
                     a, k, self.args, self.kwargs = self.args, self.kwargs, None, None
                     response = self.target(*a, **k)
                     with self.synch_lock:
-                        self.end_of_thread = Dict(response=response)
+                        self.end_of_thread = Data(response=response)
                 else:
                     with self.synch_lock:
                         self.end_of_thread = Null
             except Exception, e:
                 with self.synch_lock:
-                    self.end_of_thread = Dict(exception=_Except.wrap(e))
+                    self.end_of_thread = Data(exception=_Except.wrap(e))
                 if self not in self.parent.children:
                     # THREAD FAILURES ARE A PROBLEM ONLY IF NO ONE WILL BE JOINING WITH IT
                     try:
@@ -513,7 +509,7 @@ class Thread(object):
             else:
                 _Log.error("Thread {{name|quote}} did not end well", name=self.name, cause=self.end_of_thread.exception)
         else:
-            from pyLibrary.debugs.exceptions import Except
+            from MoLogs.exceptions import Except
 
             raise Except(type=Thread.TIMEOUT)
 
@@ -586,7 +582,6 @@ def _stop_main_thread():
     sys.exit(0)
 
 
-
 class ThreadedQueue(Queue):
     """
     DISPATCH TO ANOTHER (SLOWER) queue IN BATCHES OF GIVEN size
@@ -611,7 +606,6 @@ class ThreadedQueue(Queue):
         batch_size = coalesce(batch_size, int(max_size / 2) if max_size else None, 900)
         max_size = coalesce(max_size, batch_size * 2)  # REASONABLE DEFAULT
         period = coalesce(period, SECOND)
-        bit_more_time = 5 * SECOND
 
         Queue.__init__(self, name=name, max=max_size, silent=silent)
 
@@ -623,7 +617,9 @@ class ThreadedQueue(Queue):
 
             _buffer = []
             _post_push_functions = []
-            next_push = Date.now() + period  # THE TIME WE SHOULD DO A PUSH
+            now = Date.now()
+            next_push = now + period  # THE TIME WE SHOULD DO A PUSH
+            last_push = now - period
 
             def push_to_queue():
                 queue.extend(_buffer)
@@ -636,23 +632,22 @@ class ThreadedQueue(Queue):
                 try:
                     if not _buffer:
                         item = self.pop()
-                        items = [item] + self.pop_all()  # PLEASE REMOVE
                         now = Date.now()
-                        next_push = now + period
+                        if now > last_push + period:
+                            # _Log.note("delay next push")
+                            next_push = now + period
                     else:
                         item = self.pop(till=Till(till=next_push))
-                        items = [item]+self.pop_all()  # PLEASE REMOVE
                         now = Date.now()
 
-                    for item in items:  # PLEASE REMOVE
-                        if item is Thread.STOP:
-                            push_to_queue()
-                            please_stop.go()
-                            break
-                        elif isinstance(item, types.FunctionType):
-                            _post_push_functions.append(item)
-                        elif item is not None:
-                            _buffer.append(item)
+                    if item is Thread.STOP:
+                        push_to_queue()
+                        please_stop.go()
+                        break
+                    elif isinstance(item, types.FunctionType):
+                        _post_push_functions.append(item)
+                    elif item is not None:
+                        _buffer.append(item)
 
                 except Exception, e:
                     e = Except.wrap(e)
@@ -677,9 +672,7 @@ class ThreadedQueue(Queue):
                         next_push = now + period
                         if _buffer:
                             push_to_queue()
-                            # A LITTLE MORE TIME TO FILL THE NEXT BUFFER
-                            now = Date.now()
-                            next_push = max(next_push, now + bit_more_time)
+                            last_push = now = Date.now()
 
                 except Exception, e:
                     e = Except.wrap(e)
@@ -773,7 +766,7 @@ def _wait_for_exit(please_stop):
         else:
             cr_count = -1000000  # NOT /dev/null
 
-        if strings.strip(line) == "exit":
+        if line.strip() == "exit":
             _Log.alert("'exit' Detected!  Stopping...")
             return
 

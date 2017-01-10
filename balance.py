@@ -21,11 +21,9 @@ from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
 
-from pyLibrary import convert, strings, jsons
-from pyLibrary.debugs import constants, startup
-
-from pyLibrary.debugs.logs import Log, machine_metadata
-from pyLibrary.dot import wrap, Dict, coalesce, DictList, listwrap, wrap_leaves, unwrap, Null, literal_field
+from MoLogs import Log, strings, machine_metadata, startup, constants
+from pyDots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
+from pyLibrary import convert, jsons
 from pyLibrary.env import http
 from pyLibrary.maths import Math
 from pyLibrary.maths.randoms import Random
@@ -41,12 +39,12 @@ CONCURRENT = 1  # NUMBER OF SHARDS TO MOVE CONCURRENTLY, PER NODE
 BILLION = 1024 * 1024 * 1024
 BIG_SHARD_SIZE = 2 * BILLION  # SIZE WHEN WE SHOULD BE MOVING ONLY ONE SHARD AT A TIME
 
-current_moving_shards = DictList()  # BECAUSE ES WILL NOT TELL US WHERE THE SHARDS ARE MOVING TO
+current_moving_shards = FlatList()  # BECAUSE ES WILL NOT TELL US WHERE THE SHARDS ARE MOVING TO
 
 DEAD = "DEAD"
 ALIVE = "ALIVE"
-last_known_node_status = Dict()
-last_scrubbing = Dict()
+last_known_node_status = Data()
+last_scrubbing = Data()
 
 
 def assign_shards(settings):
@@ -312,7 +310,7 @@ def assign_shards(settings):
 
     # THIS HAPPENS WHEN THE ES SHARD LOGIC ASSIGNED TOO MANY REPLICAS TO A SINGLE ZONE
     overloaded_zone_index_pairs = set()
-    over_allocated_shards = Dict()
+    over_allocated_shards = Data()
     for g, replicas in jx.groupby(shards, ["index", "i"]):
         for z in zones:
             safe_replicas = filter(lambda r: r.status == "STARTED" and r.node.zone.name == z.name, replicas)
@@ -360,7 +358,7 @@ def assign_shards(settings):
     # LOOK FOR DUPLICATION OPPORTUNITIES
     # ONLY DUPLICATE PRIMARY SHARDS AT THIS TIME
     # IN THEORY THIS IS FASTER BECAUSE THEY ARE IN THE SAME ZONE (AND BETTER MACHINES)
-    dup_shards = Dict()
+    dup_shards = Data()
     for g, replicas in jx.groupby(shards, ["index", "i"]):
         # WE CAN ASSIGN THIS REPLICA WITHIN THE SAME ZONE
         for s in replicas:
@@ -382,7 +380,7 @@ def assign_shards(settings):
         Log.note("No intra-zone duplication remaining")
 
     # LOOK FOR UNALLOCATED SHARDS
-    low_risk_shards = Dict()
+    low_risk_shards = Data()
     for g, replicas in jx.groupby(shards, ["index", "i"]):
         # WE CAN ASSIGN THIS REPLICA TO spot
         for s in replicas:
@@ -402,7 +400,7 @@ def assign_shards(settings):
         Log.note("No low risk shards found")
 
     # LOOK FOR SHARD IMBALANCE
-    rebalance_candidates = Dict()
+    rebalance_candidates = Data()
     for g, replicas in jx.groupby(filter(lambda r: r.status == "STARTED", shards), ["node.name", "index"]):
         g = wrap_leaves(g)
         replicas = list(replicas)
@@ -426,7 +424,7 @@ def assign_shards(settings):
         Log.note("No shards need to be balanced")
 
     # LOOK FOR OTHER, SLOWER, DUPLICATION OPPORTUNITIES
-    dup_shards = Dict()
+    dup_shards = Data()
     for _, replicas in jx.groupby(shards, ["index", "i"]):
         # WE CAN ASSIGN THIS REPLICA WITHIN THE SAME ZONE
         for s in replicas:
@@ -612,7 +610,7 @@ def get_node_directories(node, settings):
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
 
-    output = DictList()
+    output = FlatList()
     for dir_ in directories.split("\n"):
         dir_ = dir_.strip()
         path = dir_.split("/")
@@ -716,7 +714,7 @@ def net_shards_to_move(concurrent, shards, relocating):
 def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, settings):
     moves = jx.sort(ALLOCATION_REQUESTS, ["mode_priority", "replication_priority", "shard.index_size", "shard.i"])
 
-    busy_nodes = Dict()
+    busy_nodes = Data()
     for s in relocating:
         if s.status == "INITIALIZING":
             busy_nodes[s.node.name] += s.size
