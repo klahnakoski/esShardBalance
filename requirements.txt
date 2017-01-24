@@ -1,0 +1,7 @@
+pyDots
+MoLogs
+pyLibrary
+ecdsa
+fabric
+# ecdsa required by fabric (but not installed by pip)
+boto

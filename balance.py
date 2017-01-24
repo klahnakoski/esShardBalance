@@ -596,10 +596,13 @@ def get_node_directories(node, settings):
     env.abort_exception = Log.error
 
     # LOGIN TO FIND SHARDS
-    directories = Null
-    with fabric_settings(warn_only=True):
-        with hide('output'):
-            directories = sudo("find /data* -type d")
+    try:
+        with fabric_settings(warn_only=True):
+            with hide('output'):
+                directories = sudo("find /data* -type d")
+    except Exception, e:
+        Log.warning("Can not get directories!", cause=e)
+        return Null
     # /data1/active-data/nodes/0/indices/jobs20161001_000000
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/11
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/11/_state
