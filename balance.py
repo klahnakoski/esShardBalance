@@ -620,13 +620,18 @@ def get_node_directories(node, settings):
         if len(path) != 8:
             continue
         index = path[6]
-        shard = int(path[7])
-        output.append({
-            "index":index,
-            "i": shard,
-            "dir":dir_
-        })
-
+        try:
+            shard = int(path[7])
+            output.append({
+                "index": index,
+                "i": shard,
+                "dir": dir_
+            })
+        except Exception, e:
+            if path[7] == "_state":
+                pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
+            else:
+                Log.error("not expected", casue=e)
     return output
 
 
