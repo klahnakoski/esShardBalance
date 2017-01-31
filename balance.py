@@ -21,17 +21,17 @@ from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
 
-from MoLogs import Log, strings, machine_metadata, startup, constants
-from pyDots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
-from pyLibrary import convert, jsons
+import mo_json_config
+from mo_collections import UniqueIndex
+from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
+from mo_json import value2json, json2value, utf82unicode
+from mo_logs import Log, strings, machine_metadata, startup, constants
+from mo_math import SUM, MIN, Math, MAX
+from mo_math.randoms import Random
+from mo_threads import Thread, Signal, Till
+from mo_times import Date
 from pyLibrary.env import http
-from pyLibrary.maths import Math
-from pyLibrary.maths.randoms import Random
 from pyLibrary.queries import jx
-from pyLibrary.queries.unique_index import UniqueIndex
-from pyLibrary.thread.threads import Thread, Signal
-from pyLibrary.thread.till import Till
-from pyLibrary.times.dates import Date
 
 DEBUG = True
 
@@ -98,7 +98,7 @@ def assign_shards(settings):
         if node:
             for k, v in n.items():
                 node[k] = v
-            node.disk_free = Math.min(node.disk_free, node.disk)
+            node.disk_free = MIN([node.disk_free, node.disk])
 
     # REVIEW NODE STATUS, AND ANY CHANGES
     first_run = not last_known_node_status
@@ -124,7 +124,7 @@ def assign_shards(settings):
         siblings = wrap(filter(lambda n: n.role == "d", siblings))
         for s in siblings:
             s.siblings = len(siblings)
-            s.zone.memory = Math.sum(siblings.memory)
+            s.zone.memory = SUM(siblings.memory)
 
     Log.note("{{num}} nodes", num=len(nodes))
 
@@ -174,7 +174,7 @@ def assign_shards(settings):
     for g, replicas in jx.groupby(shards, ["index", "i"]):
         if all(r.status == "UNASSIGNED" for r in replicas):
             red_shards.append(g)
-        size = Math.MAX(replicas.size)
+        size = MAX(replicas.size)
         for r in replicas:
             r.size = size
 
@@ -222,7 +222,7 @@ def assign_shards(settings):
         for zone in zones:
             override = wrap([i for i in settings.allocate if (i.name == g.index or (i.name.endswith("*") and g.index.startswith(i.name[:-1]))) and i.zone == zone.name])[0]
             if override:
-                wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = Math.min(coalesce(override.shards, zone.shards), zone.num_nodes)
+                wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = MIN([coalesce(override.shards, zone.shards), zone.num_nodes])
             else:
                 wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = zone.shards
 
@@ -230,11 +230,11 @@ def assign_shards(settings):
         if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index.recovery.initial_shards": 1})
-            Log.note("{{Number of shards required {{index}}\n{{result}}", index=g.index, result=convert.json2value(convert.utf82unicode(response.content)))
+            Log.note("{{Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
 
             # CHANGE NUMBER OF REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index": {"number_of_replicas": num_replicas-1}})
-            Log.note("Update to {{num}} replicas for {{index}}\n{{result}}", num=num_replicas, index=g.index, result=convert.json2value(convert.utf82unicode(response.content)))
+            Log.note("Update to {{num}} replicas for {{index}}\n{{result}}", num=num_replicas, index=g.index, result=json2value(utf82unicode(response.content)))
 
         for n in nodes:
             if n.role == 'd':
@@ -258,7 +258,7 @@ def assign_shards(settings):
 
             allocation.add(allocate_)
 
-        index_size = Math.sum(replicas.size)
+        index_size = SUM(replicas.size)
         for r in replicas:
             r.index_size = index_size
             r.siblings = num_primaries
@@ -473,7 +473,7 @@ def assign_shards(settings):
                     if most_shards >= len(started_shards):
                         continue
 
-                    if Math.max(1, alloc.min_allowed) < len(started_shards):
+                    if MAX([1, alloc.min_allowed]) < len(started_shards):
                         shard = started_shards[0]
                         rebalance_candidate = shard
                         most_shards = len(started_shards)
@@ -498,7 +498,7 @@ def get_ip_map():
     if local_ip_to_public_ip_map:
         return
     Log.note("getting public/private ip map")
-    param = jsons.ref.get("file://~/private.json#aws_credentials")
+    param = mo_json_config.get("file://~/private.json#aws_credentials")
     param = dict(
         region_name=param.region,
         aws_access_key_id=unwrap(param.aws_access_key_id),  # TRUE None REQUIRED
@@ -540,7 +540,7 @@ def find_and_allocate_shards(nodes, settings, red_shards):
 
             path = settings.elasticsearch.host + ":" + unicode(settings.elasticsearch.port)
             response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-            result = convert.json2value(convert.utf82unicode(response.content))
+            result = json2value(utf82unicode(response.content))
             if response.status_code not in [200, 201] or not result.acknowledged:
                 main_reason = strings.between(result.error, "[NO", "]")
 
@@ -740,7 +740,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 "index": shard.index
             }
         }))
-        index_size = Math.sum(shards_for_this_index.size)
+        index_size = SUM(shards_for_this_index.size)
         existing_on_nodes = set(s.node.name for s in shards_for_this_index if s.status in {"INITIALIZING", "STARTED", "RELOCATING"} and s.i==shard.i)
         # FOR THE NODES WITH NO SHARDS, GIVE A DEFAULT VALUES
         node_weight = {
@@ -750,9 +750,9 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         for g, ss in jx.groupby(filter(lambda s: s.status == "STARTED" and s.node, shards_for_this_index), "node.name"):
             g = wrap_leaves(g)
             index_count = len(ss)
-            node_weight[g.node.name] = nodes[g.node.name].memory * (1 - float(Math.sum(ss.size))/float(index_size+1))
+            node_weight[g.node.name] = nodes[g.node.name].memory * (1 - float(SUM(ss.size))/float(index_size+1))
             min_allowed = allocation[shard.index, g.node.name].min_allowed
-            node_weight[g.node.name] *= 4 ** Math.MIN([-1, min_allowed - index_count - 1])
+            node_weight[g.node.name] *= 4 ** MIN([-1, min_allowed - index_count - 1])
 
         list_nodes = list(nodes)
         list_node_weight = [node_weight[n.name] for n in list_nodes]
@@ -774,7 +774,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             elif move.reason == "slightly better balance" and len(alloc.shards) >= alloc.min_allowed:
                 list_node_weight[i] = 0
 
-        if Math.sum(list_node_weight) == 0:
+        if SUM(list_node_weight) == 0:
             continue  # NO SHARDS CAN ACCEPT THIS
 
         while True:
@@ -828,7 +828,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         )
 
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-        result = convert.json2value(convert.utf82unicode(response.content))
+        result = json2value(utf82unicode(response.content))
         if response.status_code not in [200, 201] or not result.acknowledged:
             main_reason = strings.between(result.error, "[NO", "]")
 
@@ -868,8 +868,8 @@ def cancel(path, shard):
         "shard": shard.i,
         "node": shard.node.name
     }}]}
-    result = convert.json2value(
-        convert.utf82unicode(http.post(path + "/_cluster/reroute", json=json).content)
+    result = json2value(
+        utf82unicode(http.post(path + "/_cluster/reroute", json=json).content)
     )
     if not result.acknowledged:
         main_reason = strings.between(result.error, "[NO", "]")
@@ -955,7 +955,7 @@ def main():
 
         response = http.put(
             path + "/_cluster/settings",
-            data=convert.value2json(
+            data=value2json(
                 {
                     "persistent": {
                         "cluster.routing.allocation.enable": "none",
@@ -997,7 +997,7 @@ def main():
             for c in listwrap(command):
                 response = http.put(
                     path + p,
-                    data=convert.value2json(c)
+                    data=value2json(c)
                 )
                 Log.note("Finally {{command}}\n{{result}}", command=c, result=response.all_content)
 
