@@ -12,13 +12,12 @@ from __future__ import division
 from __future__ import unicode_literals
 
 import datetime
-
 import re
 
-from mo_times.vendor.dateutil.relativedelta import relativedelta
-
-from mo_dots import wrap
+from mo_dots import get_module, wrap
 from mo_math import MIN, Math
+
+from mo_times.vendor.dateutil.relativedelta import relativedelta
 
 _Date = None
 _Log = None
@@ -61,9 +60,8 @@ class Duration(object):
         elif isinstance(value, float) and Math.is_nan(value):
             return None
         else:
-            from pyLibrary import convert
             from mo_logs import Log
-            Log.error("Do not know type of object (" + convert.value2json(value) + ")of to make a Duration")
+            Log.error("Do not know type of object (" + get_module("mo_json").value2json(value) + ")of to make a Duration")
 
     @staticmethod
     def range(start, stop, step):
@@ -135,7 +133,7 @@ class Duration(object):
                 if r >= MILLI_VALUES.day * 31:
                     from mo_logs import Log
                     Log.error("Do not know how to handle")
-            r = MIN(29 / 30, (r + tod) / (MILLI_VALUES.day * 30))
+            r = MIN([29 / 30, (r + tod) / (MILLI_VALUES.day * 30)])
 
             output = Math.floor(m / amount.month) + r
             return output
