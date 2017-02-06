@@ -104,9 +104,13 @@ def wrap_from(frum, schema=None):
 
 
 class Schema(object):
+    """
+    A Schema MAPS ALL COLUMNS IN DE-NORMALIZED DATABASE (DATA CUBE) TO
+    """
 
-    def __init__(self, columns):
-        self.lookup = Index(keys=["name"], data=columns)
+    def __init__(self, table_name, columns):
+        self.table = table_name  # USED AS AN EXPLICIT STATEMENT OF PERSPECTIVE IN THE DATABASE
+        self.lookup = Index(keys=[join_field(["names", self.table])], data=columns)
 
     def __getitem__(self, column_name):
         return self.lookup[column_name]
@@ -114,8 +118,16 @@ class Schema(object):
     def get_column(self, name, table=None):
         return self.lookup[name]
 
+    def get_column_name(self, column):
+        """
+        RETURN THE COLUMN NAME, FROM THE PERSPECTIVE OF THIS SCHEMA
+        :param column:
+        :return: NAME OF column
+        """
+        return column.names[self.table]
+
     @property
-    def all_columns(self):
+    def columns(self):
         return list(self.lookup)
 
     def keys(self):

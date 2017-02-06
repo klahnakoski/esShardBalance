@@ -24,7 +24,8 @@ from fabric.state import env
 import mo_json_config
 from mo_collections import UniqueIndex
 from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
-from mo_json import value2json, json2value, utf82unicode
+from mo_json import json2value, value2json
+from mo_json import utf82unicode
 from mo_logs import Log, strings, machine_metadata, startup, constants
 from mo_math import SUM, MIN, Math, MAX
 from mo_math.randoms import Random
@@ -323,7 +324,7 @@ def assign_shards(settings):
                         lambda r: r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == possible_zone.name,
                         replicas
                     ))
-                    if not best_zone or (not best_zone[0].risky and z.risky) or (best_zone[1] > number_of_shards and best_zone[0].risky == r.risky):
+                    if not best_zone or (not best_zone[0].risky and z.risky) or (best_zone[0].risky == z.risky and best_zone[1] > number_of_shards):
                         best_zone = possible_zone, number_of_shards
                     if zones[possible_zone].shards > number_of_shards:
                         # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS
@@ -600,6 +601,7 @@ def get_node_directories(node, settings):
         with fabric_settings(warn_only=True):
             with hide('output'):
                 directories = sudo("find /data* -type d")
+                drive_space = sudo("df -h")
     except Exception, e:
         Log.warning("Can not get directories!", cause=e)
         return Null
@@ -612,6 +614,11 @@ def get_node_directories(node, settings):
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/_state
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
+    # CATCH THE OUT-OF-CONTROL LOGGING THAT FILLS DRIVES (AND OTHER NASTINESS)
+    for line in drive_space.split("\n"):
+        fullness = strings.between(line, " ", "%")
+        if Math.is_integer(fullness) and int(fullness) >= 98:
+            Log.warning("Drive at {{ip}} has full drive {{drive|quote}}", ip=IP, drive=line)
 
     output = FlatList()
     for dir_ in directories.split("\n"):
@@ -769,9 +776,9 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
             elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10:
                 list_node_weight[i] = 0
-            elif move.mode_priority > 1 and len(alloc.shards) >= alloc.max_allowed:
+            elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
-            elif move.reason == "slightly better balance" and len(alloc.shards) >= alloc.min_allowed:
+            elif move.reason == "slightly better balance" and len(alloc.shards) > alloc.min_allowed:
                 list_node_weight[i] = 0
 
         if SUM(list_node_weight) == 0:
