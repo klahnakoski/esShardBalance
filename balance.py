@@ -601,6 +601,7 @@ def get_node_directories(node, settings):
         with fabric_settings(warn_only=True):
             with hide('output'):
                 directories = sudo("find /data* -type d")
+                drive_space = sudo("df -h")
     except Exception, e:
         Log.warning("Can not get directories!", cause=e)
         return Null
@@ -613,6 +614,11 @@ def get_node_directories(node, settings):
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/_state
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/translog
     # /data1/active-data/nodes/0/indices/jobs20161001_000000/6/index
+    # CATCH THE OUT-OF-CONTROL LOGGING THAT FILLS DRIVES (AND OTHER NASTINESS)
+    for line in drive_space.split("\n"):
+        fullness = strings.between(line, " ", "%")
+        if Math.is_integer(fullness) != "Use" and int(fullness) >= 98:
+            Log.warning("Drive at {{ip}} has full drive {{drive|quote}}", ip=IP, drive=line)
 
     output = FlatList()
     for dir_ in directories.split("\n"):
