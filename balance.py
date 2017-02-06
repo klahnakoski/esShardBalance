@@ -638,7 +638,7 @@ def get_node_directories(node, settings):
             if path[7] == "_state":
                 pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
             else:
-                Log.error("not expected", casue=e)
+                Log.error("not expected dir={{dir}}", cause=e, dir=dir_)
     return output
 
 
