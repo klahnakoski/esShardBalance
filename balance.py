@@ -617,7 +617,7 @@ def get_node_directories(node, settings):
     # CATCH THE OUT-OF-CONTROL LOGGING THAT FILLS DRIVES (AND OTHER NASTINESS)
     for line in drive_space.split("\n"):
         fullness = strings.between(line, " ", "%")
-        if Math.is_integer(fullness) != "Use" and int(fullness) >= 98:
+        if Math.is_integer(fullness) and int(fullness) >= 98:
             Log.warning("Drive at {{ip}} has full drive {{drive|quote}}", ip=IP, drive=line)
 
     output = FlatList()
