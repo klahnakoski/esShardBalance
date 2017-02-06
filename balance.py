@@ -452,10 +452,10 @@ def assign_shards(settings):
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
     # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
     # IT WILL ALTERNATE SHARDS (CONTINUALLY TRYING TO FILL SPACE, BUT MAKING A HOLE ELSEWHERE)
-    if not rebalance_candidates:
-        total_moves = 0
-        for index_name in set(shards.index):
-            for z in set([n.zone.name for n in nodes]):
+    total_moves = 0
+    for index_name in set(shards.index):
+        for z in set([n.zone.name for n in nodes]):
+            if not rebalance_candidates[z]:
                 rebalance_candidate = None  # MOVE ONLY ONE SHARD, PER INDEX, PER ZONE, AT A TIME
                 most_shards = 0  # WE WANT TO OFFLOAD THE NODE WITH THE MOST SHARDS
                 destination_zone_name = None
@@ -482,11 +482,11 @@ def assign_shards(settings):
                 if destination_zone_name and rebalance_candidate:
                     total_moves += 1
                     allocate(CONCURRENT, [rebalance_candidate], {destination_zone_name}, "slightly better balance", 8, settings)
-        if total_moves:
-            Log.note(
-                "{{num}} shards can be moved to slightly better location within their own zone",
-                num=total_moves,
-            )
+    if total_moves:
+        Log.note(
+            "{{num}} shards can be moved to slightly better location within their own zone",
+            num=total_moves,
+        )
 
     _allocate(relocating, path, nodes, shards, red_shards, allocation, settings)
 
