@@ -778,7 +778,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
             elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
-            elif move.reason == "slightly better balance" and len(alloc.shards) > alloc.min_allowed:
+            elif move.reason == "slightly better balance" and (len(alloc.shards) > alloc.min_allowed or n.name in current_moving_shards.to_node):
                 list_node_weight[i] = 0
 
         if SUM(list_node_weight) == 0:

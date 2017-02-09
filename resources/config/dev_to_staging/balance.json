@@ -1,5 +1,5 @@
 {
-    "disable_cleaner": false,
+    "disable_cleaner": true,
     "zones":[
         {
             "name": "spot",
