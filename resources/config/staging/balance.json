@@ -28,6 +28,11 @@
             "name": "repo*",
             "zone": "spot",
             "shards": 3
+		},
+        {
+            "name": "unittest*",
+            "zone": "spot",
+            "shards": 1
 		}
 	],
     "connect": {
