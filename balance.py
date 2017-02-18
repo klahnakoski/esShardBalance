@@ -266,10 +266,10 @@ def assign_shards(settings):
 
     del ALLOCATION_REQUESTS[:]
 
-    # LOOKING FOR SHARDS WITH ZERO INSTANCES, IN THE spot ZONE
+    # LOOKING FOR SHARDS WITH ZERO STARTED INSTANCES
     not_started = []
     for g, replicas in jx.groupby(shards, ["index", "i"]):
-        started_replicas = list(set([s.zone.name for s in replicas if s.status in {"STARTED", "RELOCATING"}]))
+        started_replicas = list(set([s.zone.name for s in replicas if s.status in {"STARTED", "RELOCATING", "INITIALIZING"}]))
         if len(started_replicas) == 0:
             # MARK NODE AS RISKY
             for s in replicas:
@@ -354,7 +354,18 @@ def assign_shards(settings):
         Log.note("No over-allocated shard found")
 
     # MOVE SHARDS OUT OF FULL NODES (BIGGEST TO SMALLEST)
-
+    free_space = Data()  # MAP FROM ZONENAME TO SHARDS TO MOVE
+    for n in nodes:
+        if n.disk and float(n.disk_free) / float(n.disk) < 0.05:
+            biggest_shard = jx.sort([s for s in shards if s.node == n], "size").last()
+            if biggest_shard.status=="STARTED":
+                free_space[n.zone.name] += [biggest_shard]
+            else:
+                pass  # TRY AGAIN LATER
+    if free_space:
+        for z, moves in free_space.items():
+            Log.note("{{num}} shards can be moved to free up space in {{zone}}", num=len(moves), zone=z)
+            allocate(CONCURRENT, moves, {z}, "free space", 3, settings)
 
     # LOOK FOR DUPLICATION OPPORTUNITIES
     # ONLY DUPLICATE PRIMARY SHARDS AT THIS TIME
@@ -420,7 +431,7 @@ def assign_shards(settings):
     if rebalance_candidates:
         for z, b in rebalance_candidates.items():
             Log.note("{{num}} shards can be moved to better location within {{zone|quote}} zone", zone=z, num=len(b))
-            allocate(CONCURRENT, b, {z}, "not balanced", 6, settings)
+            allocate(CONCURRENT, b, {z}, "not balanced", 4, settings)
     else:
         Log.note("No shards need to be balanced")
 
@@ -445,9 +456,6 @@ def assign_shards(settings):
             allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 7, settings)
     else:
         Log.note("No inter-zone duplication remaining")
-
-    # TODO: SOME NODES MAY BE TOO FULL
-
 
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
     # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
