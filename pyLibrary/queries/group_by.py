@@ -54,8 +54,7 @@ def groupby(data, keys=None, size=None, min_size=None, max_size=None, contiguous
         if not data:
             return Null
 
-
-        accessor = jx_expression_to_function(TupleOp("tuple", keys))  # CAN RETURN Null, WHICH DOES NOT PLAY WELL WITH __cmp__
+        accessor = jx_expression_to_function(jx_expression({"tuple": keys}))  # CAN RETURN Null, WHICH DOES NOT PLAY WELL WITH __cmp__
         def _output():
             start = 0
             prev = accessor(data[0])
