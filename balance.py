@@ -782,7 +782,11 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
             elif n.disk_free == 0:
                 list_node_weight[i] = 0
-            elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10:
+            elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10 and move.reason != "not started":
+                list_node_weight[i] = 0
+            elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.05:
+                if move.reason == "not started":
+                    Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
             elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
