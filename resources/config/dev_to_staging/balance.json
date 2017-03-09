@@ -59,9 +59,10 @@
         "saved*",
         "branches*",
         "repo*",
-        "test_failuers*",
+        "test_failures*",
         "coverage-summary*",
         "job*",
+        "task*",
         "treeherder*",
         "unit*"
     ],
