@@ -314,8 +314,9 @@ def assign_shards(settings):
     over_allocated_shards = Data()
     for g, replicas in jx.groupby(shards, ["index", "i"]):
         for z in zones:
-            safe_replicas = filter(lambda r: r.status == "STARTED" and r.node.zone.name == z.name, replicas)
-            if len(safe_replicas) > z.shards:
+            realized_replicas = filter(lambda r: r.status == "STARTED" and r.node.zone.name == z.name, replicas)
+            expected_replicas = replicas_per_zone[g.index][z.name]
+            if len(realized_replicas) > expected_replicas:
                 overloaded_zone_index_pairs.add((z.name, g.index))
                 # IS THERE A PLACE TO PUT IT?
                 best_zone = None
@@ -328,15 +329,15 @@ def assign_shards(settings):
                         best_zone = possible_zone, number_of_shards
                     if zones[possible_zone].shards > number_of_shards:
                         # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS
-                        i = Random.weight([r.siblings for r in safe_replicas])
-                        shard = safe_replicas[i]
+                        i = Random.weight([r.siblings for r in realized_replicas])
+                        shard = realized_replicas[i]
                         over_allocated_shards[possible_zone.name] += [shard]
                         break
                 else:
                     if z == best_zone[0]:
                         continue
-                    i = Random.weight([r.siblings for r in safe_replicas])
-                    shard = safe_replicas[i]
+                    i = Random.weight([r.siblings for r in realized_replicas])
+                    shard = realized_replicas[i]
                     # alloc = allocation[g.index, shard.node.name]
                     potential_peers =filter(
                         lambda r: r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.index ==shard.index and r.i==shard.i and r.node.zone==shard.node.zone,
@@ -348,7 +349,7 @@ def assign_shards(settings):
 
     if over_allocated_shards:
         for z, v in over_allocated_shards.items():
-            Log.note("{{num}} shards can be moved to {{zone}}", num=len(over_allocated_shards), zone=z)
+            Log.note("{{num}} shards can be moved to {{zone}}", num=len(v), zone=z)
             allocate(CONCURRENT, v, {z}, "over allocated", 3, settings)
     else:
         Log.note("No over-allocated shard found")
