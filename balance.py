@@ -288,6 +288,7 @@ def assign_shards(settings):
             # SINCE WE CAN NOT RECOGNIZE THE ASSIGNMENT THAT WE MAY HAVE REQUESTED LAST ITERATION
             Log.note("Delay work, cluster busy RELOCATING/INITIALIZING {{num}} shards", num=len(relocating))
             return
+        # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
         allocate(30, please_initialize, set(n.zone.name for n in nodes) - risky_zone_names, "not started", 1, settings)
     else:
         Log.note("All shards have started")
@@ -744,6 +745,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             busy_nodes[s.node.name] += s.size
 
     done = set()  # (index, i) pair
+    failures = 0
     Log.note("Considering {{num}} moves", num=len(moves))
     for move in moves:
         shard = move.shard
@@ -853,27 +855,31 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
         result = json2value(utf82unicode(response.content))
         if response.status_code not in [200, 201] or not result.acknowledged:
+            failures += 1
             main_reason = strings.between(result.error, "[NO", "]")
-
             if main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
                 pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
-                Log.note("failed: zone full")
+                Log.note("Allocation failed: zone full. ES zone-based shard balancer activated")
             elif main_reason and main_reason.find("after allocation more than allowed") != -1:
                 pass
-                Log.note("failed: out of space")
+                Log.note("Allocation failed: node out of space.")
             elif "failed to resolve [" in result.error:
                 # LOST A NODE WHILE SENDING UPDATES
                 lost_node_name = strings.between(result.error, "failed to resolve [", "]").strip()
-                Log.warning("Lost node during allocate {{node}}", node=lost_node_name)
+                Log.warning("Allocation failed: Lost node during allocate {{node}}", node=lost_node_name)
                 nodes[lost_node_name].zone = None
             else:
                 Log.warning(
-                    "{{code}} Can not move/allocate:\n\treason={{reason}}\n\tdetails={{error|quote}}",
+                    "Allocation failed: {{code}} Can not move/allocate:\n\treason={{reason}}\n\tdetails={{error|quote}}",
                     code=response.status_code,
                     reason=main_reason,
                     error=result.error
                 )
+            if failures >= 3:
+                Log.warning("{{num}} consecutive failed moves. Starting over.", num=failures)
+                return
         else:
+            failures = 0
             if shard.status == "STARTED":
                 shard.status = "RELOCATING"
             done.add((shard.index, shard.i))
