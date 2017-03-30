@@ -214,7 +214,7 @@ def assign_shards(settings):
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
     allocation = UniqueIndex(["index", "node.name"])
-    replicas_per_zone = {}
+    replicas_per_zone = {}  # MAP <index> -> <zone.name> -> #shards
 
     for g, replicas in jx.groupby(shards, "index"):
         Log.note("review replicas of {{index}}", index=g.index)
@@ -231,7 +231,7 @@ def assign_shards(settings):
         if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index.recovery.initial_shards": 1})
-            Log.note("{{Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
+            Log.note("Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
 
             # CHANGE NUMBER OF REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index": {"number_of_replicas": num_replicas-1}})
@@ -289,6 +289,7 @@ def assign_shards(settings):
             Log.note("Delay work, cluster busy RELOCATING/INITIALIZING {{num}} shards", num=len(relocating))
             return
         # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
+        Log.note("{{num}} shards have not started", num=len(please_initialize))
         allocate(30, please_initialize, set(n.zone.name for n in nodes) - risky_zone_names, "not started", 1, settings)
     else:
         Log.note("All shards have started")
@@ -305,8 +306,20 @@ def assign_shards(settings):
                     high_risk_shards.append(s)
                     break  # ONLY NEED ONE
     if high_risk_shards:
+        # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
         Log.note("{{num}} high risk shards found", num=len(high_risk_shards))
-        allocate(10, high_risk_shards, set(n.zone.name for n in nodes) - risky_zone_names, "high risk shards", 2, settings)
+
+        allowed_zones = {}
+        for s in high_risk_shards:
+            zones_for_shard = set([z for z, c in replicas_per_zone[s.index].items() if c > 0])
+            if zones_for_shard - risky_zone_names:
+                zones_for_shard -= risky_zone_names  # DO NOT ASSIGN TO RISKY ZONE, IF NOT REQUIRED
+            allowed_zones.setdefault(tuple(sorted(zones_for_shard)), []).append(s)
+
+        for z, hrs in allowed_zones.items():
+            allocate(10, hrs, z, "high risk shards", 2, settings)
+
+        # allocate(10, high_risk_shards, set(n.zone.name for n in nodes) - risky_zone_names, "high risk shards", 2, settings)
     else:
         Log.note("No high risk shards found")
 
