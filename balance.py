@@ -758,7 +758,8 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             busy_nodes[s.node.name] += s.size
 
     done = set()  # (index, i) pair
-    failures = 0
+    move_failures = 0
+    sent_full_nodes_warning = False
     Log.note("Considering {{num}} moves", num=len(moves))
     for move in moves:
         shard = move.shard
@@ -787,6 +788,8 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         list_nodes = list(nodes)
         list_node_weight = [node_weight[n.name] for n in list_nodes]
+        num_full_nodes = 0
+        good_reasons = 0
         for i, n in enumerate(list_nodes):
             alloc = allocation[shard.index, n.name]
 
@@ -794,18 +797,23 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
             elif n.name in existing_on_nodes:
                 list_node_weight[i] = 0
-            elif busy_nodes[n.name] >= move.concurrent*BIG_SHARD_SIZE:
+            elif busy_nodes[n.name] >= move.concurrent * BIG_SHARD_SIZE:
                 list_node_weight[i] = 0
+                good_reasons += 1
             elif n.disk_free == 0:
                 list_node_weight[i] = 0
-            elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.10 and move.reason != "not started":
+                num_full_nodes += 1
+            elif n.disk and float(n.disk_free - shard.size) / float(n.disk) < 0.10 and move.reason != "not started":
                 list_node_weight[i] = 0
-            elif n.disk and float(n.disk_free - shard.size)/float(n.disk) < 0.05:
+                num_full_nodes += 1
+            elif n.disk and float(n.disk_free - shard.size) / float(n.disk) < 0.05:
                 if move.reason == "not started":
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
+                num_full_nodes += 1
             elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
+                good_reasons += 1
             elif move.reason == "slightly better balance" and (
                         len(alloc.shards) >= alloc.min_allowed or  # IF THERE IS A MIS-BALANCE THEN THERE MUST BE A NODE WITH **LESS** THAN MINIMUM NUMBER OF SHARDS (PROBABLY FULL)
                         n.name in current_moving_shards.to_node    # SLOW DOWN MOVEMENT OF SHARDS, ENSURING THEY ARE PROPERLY ACCOUNTED FOR
@@ -813,6 +821,9 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
 
         if SUM(list_node_weight) == 0:
+            if not sent_full_nodes_warning and num_full_nodes and not good_reasons:
+                sent_full_nodes_warning = True
+                Log.error("Can not move shard because {{num}} nodes are all full!", num=num_full_nodes)
             continue  # NO SHARDS CAN ACCEPT THIS
 
         while True:
@@ -868,7 +879,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
         result = json2value(utf82unicode(response.content))
         if response.status_code not in [200, 201] or not result.acknowledged:
-            failures += 1
+            move_failures += 1
             main_reason = strings.between(result.error, "[NO", "]")
             if main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
                 pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
@@ -888,11 +899,11 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     reason=main_reason,
                     error=result.error
                 )
-            if failures >= 3:
-                Log.warning("{{num}} consecutive failed moves. Starting over.", num=failures)
+            if move_failures >= 3:
+                Log.warning("{{num}} consecutive failed moves. Starting over.", num=move_failures)
                 return
         else:
-            failures = 0
+            move_failures = 0
             if shard.status == "STARTED":
                 shard.status = "RELOCATING"
             done.add((shard.index, shard.i))
