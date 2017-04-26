@@ -646,6 +646,8 @@ def get_node_directories(node, settings):
     output = FlatList()
     for dir_ in directories.split("\n"):
         dir_ = dir_.strip()
+        if dir_.endswith("No such file or directory"):
+            continue
         path = dir_.split("/")
         if len(path) != 8:
             continue
@@ -661,7 +663,7 @@ def get_node_directories(node, settings):
             if path[7] == "_state":
                 pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
             else:
-                Log.error("not expected dir={{dir}}", cause=e, dir=dir_)
+                Log.error("not expected dir={{dir}} for machine {{ip}}", cause=e, dir=dir_, ip=IP)
     return output
 
 
