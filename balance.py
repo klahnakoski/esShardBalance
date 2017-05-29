@@ -825,7 +825,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         if SUM(list_node_weight) == 0:
             if not sent_full_nodes_warning and num_full_nodes and not good_reasons:
                 sent_full_nodes_warning = True
-                Log.error("Can not move shard because {{num}} nodes are all full!", num=num_full_nodes)
+                Log.warning("Can not move shard because {{num}} nodes are all full!", num=num_full_nodes)
             continue  # NO SHARDS CAN ACCEPT THIS
 
         while True:
