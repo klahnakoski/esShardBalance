@@ -69,8 +69,7 @@
         "coverage-summary*",
         "job*",
         "task*",
-        "treeherder*",
-        "unit*"
+        "treeherder*"
     ],
     "elasticsearch": {
         "host": "http://activedata.allizom.org",
