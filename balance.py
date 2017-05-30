@@ -309,15 +309,19 @@ def assign_shards(settings):
         # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
         Log.note("{{num}} high risk shards found", num=len(high_risk_shards))
 
-        allowed_zones = {}
+        low_risk_zones = {}
+        high_risk_zones = {}
         for s in high_risk_shards:
             zones_for_shard = set([z for z, c in replicas_per_zone[s.index].items() if c > 0])
             if zones_for_shard - risky_zone_names:
-                zones_for_shard -= risky_zone_names  # DO NOT ASSIGN TO RISKY ZONE, IF NOT REQUIRED
-            allowed_zones.setdefault(tuple(sorted(zones_for_shard)), []).append(s)
+                low_risk_zones.setdefault(tuple(sorted(zones_for_shard - risky_zone_names)), []).append(s)
+            high_risk_zones.setdefault(tuple(sorted(zones_for_shard & risky_zone_names)), []).append(s)
 
-        for z, hrs in allowed_zones.items():
+        for z, hrs in low_risk_zones.items():
             allocate(10, hrs, z, "high risk shards", 2, settings)
+
+        for z, hrs in high_risk_zones.items():
+            allocate(10, hrs, z, "high risk shards (alt)", 2.1, settings)
 
         # allocate(10, high_risk_shards, set(n.zone.name for n in nodes) - risky_zone_names, "high risk shards", 2, settings)
     else:
@@ -659,7 +663,7 @@ def get_node_directories(node, settings):
                 "i": shard,
                 "dir": dir_
             })
-        except Exception, e:
+        except Exception as e:
             if path[7] == "_state":
                 pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
             else:
@@ -675,7 +679,7 @@ def clean_out_unused_shards(nodes, shards, settings):
             cleaned = _clean_out_one_node(node, shards, settings)
             if cleaned:
                 break  # EXIT EARLY SO WE CAN GET TO THE JOB OF BALANCING
-        except Exception, e:
+        except Exception as e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
 
 
@@ -813,7 +817,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
                 num_full_nodes += 1
-            elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
+            elif move.mode_priority >= 3 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
                 good_reasons += 1
             elif move.reason == "slightly better balance" and (
