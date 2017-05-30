@@ -65,6 +65,7 @@
         "branches*",
         "repo*",
         "test_failures*",
+        "fx-test*",
         "coverage-summary*",
         "job*",
         "task*",
