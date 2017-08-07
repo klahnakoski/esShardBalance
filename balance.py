@@ -16,24 +16,24 @@ from copy import copy
 import boto
 import boto.ec2
 import boto.vpc
+import mo_json_config
 from fabric.api import settings as fabric_settings
 from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
-
-import mo_json_config
 from future.utils import text_type
+from jx_python import jx
 from mo_collections import UniqueIndex
 from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
 from mo_json import json2value, value2json
 from mo_json import utf82unicode
 from mo_logs import Log, strings, machine_metadata, startup, constants
 from mo_math import SUM, MIN, Math, MAX
-from mo_math.randoms import Random
 from mo_threads import Thread, Signal, Till
 from mo_times import Date
+
+from mo_math.randoms import Random
 from pyLibrary.env import http
-from pyLibrary.queries import jx
 
 DEBUG = True
 
