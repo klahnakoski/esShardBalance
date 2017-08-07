@@ -22,6 +22,7 @@ from fabric.operations import sudo
 from fabric.state import env
 
 import mo_json_config
+from future.utils import text_type
 from mo_collections import UniqueIndex
 from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
 from mo_json import json2value, value2json
@@ -52,7 +53,7 @@ def assign_shards(settings):
     """
     ASSIGN THE UNASSIGNED SHARDS
     """
-    path = settings.elasticsearch.host + ":" + unicode(settings.elasticsearch.port)
+    path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
     # GET LIST OF NODES
     # coordinator    26.2gb
     # secondary     383.7gb
@@ -309,15 +310,19 @@ def assign_shards(settings):
         # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
         Log.note("{{num}} high risk shards found", num=len(high_risk_shards))
 
-        allowed_zones = {}
+        low_risk_zones = {}
+        high_risk_zones = {}
         for s in high_risk_shards:
             zones_for_shard = set([z for z, c in replicas_per_zone[s.index].items() if c > 0])
             if zones_for_shard - risky_zone_names:
-                zones_for_shard -= risky_zone_names  # DO NOT ASSIGN TO RISKY ZONE, IF NOT REQUIRED
-            allowed_zones.setdefault(tuple(sorted(zones_for_shard)), []).append(s)
+                low_risk_zones.setdefault(tuple(sorted(zones_for_shard - risky_zone_names)), []).append(s)
+            high_risk_zones.setdefault(tuple(sorted(zones_for_shard & risky_zone_names)), []).append(s)
 
-        for z, hrs in allowed_zones.items():
+        for z, hrs in low_risk_zones.items():
             allocate(10, hrs, z, "high risk shards", 2, settings)
+
+        for z, hrs in high_risk_zones.items():
+            allocate(10, hrs, z, "high risk shards (alt)", 2.1, settings)
 
         # allocate(10, high_risk_shards, set(n.zone.name for n in nodes) - risky_zone_names, "high risk shards", 2, settings)
     else:
@@ -473,6 +478,11 @@ def assign_shards(settings):
         Log.note("No inter-zone duplication remaining")
 
     # ENSURE ALL NODES HAVE THE MINIMUM NUMBER OF SHARDS
+    #
+    # Problem of 3 nodes AND 7 shards: Any node can have up to three shards,
+    # so is (3, 3, 1) a legitimate configuration? It is better to slightly better
+    # balance to (3, 2, 2).
+    #
     # WE ONLY DO THIS IF THERE IS NOT OTHER REBALANCING TO BE DONE, OTHERWISE
     # IT WILL ALTERNATE SHARDS (CONTINUALLY TRYING TO FILL SPACE, BUT MAKING A HOLE ELSEWHERE)
     total_moves = 0
@@ -562,7 +572,7 @@ def find_and_allocate_shards(nodes, settings, red_shards):
                 node=node.name
             )
 
-            path = settings.elasticsearch.host + ":" + unicode(settings.elasticsearch.port)
+            path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
             response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
             result = json2value(utf82unicode(response.content))
             if response.status_code not in [200, 201] or not result.acknowledged:
@@ -625,7 +635,7 @@ def get_node_directories(node, settings):
             with hide('output'):
                 directories = sudo("find /data* -type d")
                 drive_space = sudo("df -h")
-    except Exception, e:
+    except Exception as e:
         Log.warning("Can not get directories!", cause=e)
         return Null
     # /data1/active-data/nodes/0/indices/jobs20161001_000000
@@ -659,7 +669,7 @@ def get_node_directories(node, settings):
                 "i": shard,
                 "dir": dir_
             })
-        except Exception, e:
+        except Exception as e:
             if path[7] == "_state":
                 pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
             else:
@@ -675,7 +685,7 @@ def clean_out_unused_shards(nodes, shards, settings):
             cleaned = _clean_out_one_node(node, shards, settings)
             if cleaned:
                 break  # EXIT EARLY SO WE CAN GET TO THE JOB OF BALANCING
-        except Exception, e:
+        except Exception as e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
 
 
@@ -697,7 +707,7 @@ def _clean_out_one_node(node, all_shards, settings):
             continue
 
         with hide('output'):
-            young_files = unicode(sudo("find "+d.dir+" -cmin -120 -type f"))
+            young_files = text_type(sudo("find "+d.dir+" -cmin -120 -type f"))
             if young_files:
                 Log.error("attempt to remove young files")
             else:
@@ -716,7 +726,7 @@ ALLOCATION_REQUESTS = []
 
 def allocate(concurrent, proposed_shards, zones, reason, mode_priority, settings):
     if DEBUG:
-        assert all(isinstance(z, unicode) for z in zones)
+        assert all(isinstance(z, text_type) for z in zones)
     for s in proposed_shards:
         move = {
             "shard": s,
@@ -790,7 +800,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         list_nodes = list(nodes)
         list_node_weight = [node_weight[n.name] for n in list_nodes]
-        num_full_nodes = 0
+        full_nodes = FlatList()
         good_reasons = 0
         for i, n in enumerate(list_nodes):
             alloc = allocation[shard.index, n.name]
@@ -804,16 +814,17 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 good_reasons += 1
             elif n.disk_free == 0:
                 list_node_weight[i] = 0
-                num_full_nodes += 1
+                full_nodes.append(n)
             elif n.disk and float(n.disk_free - shard.size) / float(n.disk) < 0.10 and move.reason != "not started":
                 list_node_weight[i] = 0
-                num_full_nodes += 1
+                if move.reason != "slightly better balance":
+                    full_nodes.append(n)  # WE ONLY CARE TO COMPLAIN IF IT IS NOT ABOUT FINE BALANCE
             elif n.disk and float(n.disk_free - shard.size) / float(n.disk) < 0.05:
                 if move.reason == "not started":
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
-                num_full_nodes += 1
-            elif move.mode_priority > 2 and len(alloc.shards) >= alloc.max_allowed:
+                full_nodes.append(n)
+            elif move.mode_priority >= 3 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
                 good_reasons += 1
             elif move.reason == "slightly better balance" and (
@@ -823,9 +834,9 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
 
         if SUM(list_node_weight) == 0:
-            if not sent_full_nodes_warning and num_full_nodes and not good_reasons:
+            if not sent_full_nodes_warning and full_nodes and not good_reasons:
                 sent_full_nodes_warning = True
-                Log.warning("Can not move shard because {{num}} nodes are all full!", num=num_full_nodes)
+                Log.warning("Can not move shard because {{num}} nodes are all full:\n{{full}}", num=len(full_nodes), full=full_nodes)
             continue  # NO SHARDS CAN ACCEPT THIS
 
         while True:
@@ -990,7 +1001,7 @@ def text_to_bytes(size):
         size = size[:-2]
     try:
         return float(size) * float(multiplier)
-    except Exception, e:
+    except Exception as e:
         Log.error("not expected", cause=e)
 
 
@@ -999,7 +1010,7 @@ def main():
     Log.start(settings.debug)
 
     constants.set(settings.constants)
-    path = settings.elasticsearch.host + ":" + unicode(settings.elasticsearch.port)
+    path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
 
     try:
         response = http.put(
@@ -1039,7 +1050,7 @@ def main():
             while not please_stop:
                 try:
                     assign_shards(settings)
-                except Exception, e:
+                except Exception as e:
                     Log.warning("Not expected", cause=e)
                 (Till(seconds=30) | please_stop).wait()
 
