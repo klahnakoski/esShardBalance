@@ -1,6 +1,4 @@
 future
-pyDots
-MoLogs
 pyLibrary
 ecdsa
 fabric

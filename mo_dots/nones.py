@@ -11,7 +11,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from mo_dots import split_field, _setdefault, wrap
+from mo_dots import _setdefault, wrap, split_field
 
 _get = object.__getattribute__
 _set = object.__setattr__
@@ -134,8 +134,11 @@ class NullType(object):
     def __iter__(self):
         return _zero_list.__iter__()
 
+    def __copy__(self):
+        return Null
+
     def __deepcopy__(self, memo):
-        return None
+        return Null
 
     def last(self):
         """
@@ -147,7 +150,6 @@ class NullType(object):
         return Null
 
     def __getitem__(self, key):
-        assert not isinstance(key, str)
         if isinstance(key, slice):
             return Null
         elif isinstance(key, str):
@@ -155,7 +157,7 @@ class NullType(object):
         elif isinstance(key, int):
             return NullType(self, key)
 
-        path = split_field(key)
+        path = _split_field(key)
         output = self
         for p in path:
             output = NullType(output, p)
@@ -203,7 +205,7 @@ class NullType(object):
             seq = [k] + [key]
             _assign_to_null(o, seq, value)
         else:
-            seq = [k] + split_field(key)
+            seq = [k] + _split_field(key)
             _assign_to_null(o, seq, value)
 
     def keys(self):
@@ -223,8 +225,6 @@ class NullType(object):
 
     def __hash__(self):
         return hash(None)
-
-
 
 Null = NullType()   # INSTEAD OF None!!!
 
@@ -262,3 +262,13 @@ def _assign_to_null(obj, path, value, force=True):
         _assign_to_null(old_value, path[1:], value)
     except Exception as e:
         raise e
+
+
+def _split_field(field):
+    """
+    SIMPLE SPLIT, NO CHECKS
+    """
+    if field == ".":
+        return []
+    else:
+        return [k.replace("\a", ".") for k in field.replace("\.", "\a").split(".")]

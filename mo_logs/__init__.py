@@ -7,8 +7,6 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
@@ -187,6 +185,9 @@ class Log(object):
         :param more_params: *any more parameters (which will overwrite default_params)
         :return:
         """
+        if not isinstance(template, unicode):
+            Log.error("Log.note was expecting a unicode template")
+
         if len(template) > 10000:
             template = template[:10000]
 
@@ -326,6 +327,9 @@ class Log(object):
         :param more_params: *any more parameters (which will overwrite default_params)
         :return:
         """
+        if not isinstance(template, unicode):
+            Log.error("Log.note was expecting a unicode template")
+
         if isinstance(default_params, BaseException):
             cause = default_params
             default_params = {}
@@ -365,6 +369,10 @@ class Log(object):
         :param more_params: *any more parameters (which will overwrite default_params)
         :return:
         """
+        if not isinstance(template, unicode):
+            sys.stderr.write("Log.error was expecting a unicode template")
+            Log.error("Log.error was expecting a unicode template")
+
         if default_params and isinstance(listwrap(default_params)[0], BaseException):
             cause = default_params
             default_params = {}
