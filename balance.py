@@ -1056,7 +1056,7 @@ def main():
 
         Thread.run("loop", loop, please_stop=please_stop)
         Thread.wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
-    except Exception, e:
+    except Exception as e:
         Log.error("Problem with assign of shards", e)
     finally:
         for p, command in settings["finally"].items():
