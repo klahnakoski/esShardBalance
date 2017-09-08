@@ -812,7 +812,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             elif busy_nodes[n.name] >= move.concurrent * BIG_SHARD_SIZE:
                 list_node_weight[i] = 0
                 good_reasons += 1
-            elif n.disk_free == 0:
+            elif n.disk_free == 0 and n.disk > 0:
                 list_node_weight[i] = 0
                 full_nodes.append(n)
             elif n.disk and float(n.disk_free - shard.size) / float(n.disk) < 0.10 and move.reason != "not started":
