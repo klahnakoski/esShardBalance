@@ -49,6 +49,11 @@ last_known_node_status = Data()
 last_scrubbing = Data()
 
 
+ALLOCATE_REPLICA = "allocate_replica"
+ALLOCATE_STALE_PRIMARY = "allocate_stale_primary"
+ALLOCATE_EMPTY_PRIMARY = "allocate_empty_primary"
+
+
 def assign_shards(settings):
     """
     ASSIGN THE UNASSIGNED SHARDS
@@ -73,12 +78,12 @@ def assign_shards(settings):
         z.num_nodes=0
         zones.add(z)
 
-    stats = http.get_json(path+"/_nodes/stats?all=true")
+    stats = http.get_json(path+"/_nodes/stats")
     nodes = UniqueIndex("name", [
         {
             "name": n.name,
-            "ip": n.host[3:].replace("-", "."),
-            "role": "-" if n.attributes.data == 'false' else "d",
+            "ip": n.host,
+            "roles": n.roles,
             "zone": zones[n.attributes.zone],
             "memory": n.jvm.mem.heap_max_in_bytes,
             "disk": n.fs.total.total_in_bytes,
@@ -113,7 +118,7 @@ def assign_shards(settings):
 
         if not n.zone:
             Log.error("Expecting all nodes to have a zone")
-        if n.role != 'd':
+        if 'data' not in n.roles:
             n.disk = 0
             n.disk_free = 0
             n.memory = 0
@@ -123,14 +128,20 @@ def assign_shards(settings):
             last_known_node_status[n] = DEAD
 
     for _, siblings in jx.groupby(nodes, "zone.name"):
-        siblings = wrap(filter(lambda n: n.role == "d", siblings))
+        siblings = wrap(filter(lambda n: 'data' in n.roles, siblings))
         for s in siblings:
             s.siblings = len(siblings)
             s.zone.memory = SUM(siblings.memory)
 
     Log.note("{{num}} nodes", num=len(nodes))
 
-    # Log.note("Nodes:\n{{nodes}}", nodes=list(nodes))
+    # INDEX-LEVEL INFORMATION
+    uuid_to_index_name = {i.uuid: i.index
+        for i in convert_table_to_list(
+            http.get(path + "/_cat/indices").content,
+            ["status", "state", "index", "uuid", "_remainder"]
+        )
+    }
 
     # GET LIST OF SHARDS, WITH STATUS
     # debug20150915_172538                0  p STARTED        37319   9.6mb 172.31.0.196 primary
@@ -207,10 +218,10 @@ def assign_shards(settings):
         Log.warning("Cluster is RED")
         # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
         # ALLOCATE SHARDS INSTEAD
-        find_and_allocate_shards(nodes, settings, red_shards)
+        find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
     else:
         # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
-        clean_out_unused_shards(nodes, shards, settings)
+        clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
@@ -247,7 +258,7 @@ def assign_shards(settings):
             )
 
         for n in nodes:
-            if n.role == 'd':
+            if 'data' in n.roles:
                 pro = (float(n.memory) / float(n.zone.memory)) * (replicas_per_zone[g.index][n.zone.name] * num_primaries)
                 min_allowed = Math.floor(pro)
                 max_allowed = Math.ceiling(pro) if n.memory else 0
@@ -556,21 +567,20 @@ def get_ip_map():
     }
 
 
-def find_and_allocate_shards(nodes, settings, red_shards):
+def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
     red_shards = [(g.index, g.i) for g in red_shards]
 
     # PICK NON-RISKY NODES FIRST
     for node in jx.sort(list(nodes), "zone.risky"):
 
-        for d in get_node_directories(node, settings):
+        for d in get_node_directories(node, uuid_to_index_name, settings):
             if (d.index, d.i) not in red_shards:
                 continue
 
-            command = wrap({"allocate": {
+            command = wrap({ALLOCATE_STALE_PRIMARY: {
                 "index": d.index,
                 "shard": d.i,
-                "node": node.name,  # nodes[i].name,
-                "allow_primary": True
+                "node": node.name  # nodes[i].name
             }})
 
             Log.note(
@@ -615,12 +625,13 @@ def find_and_allocate_shards(nodes, settings, red_shards):
 
 
 
-def get_node_directories(node, settings):
+def get_node_directories(node, uuid_to_index_name, settings):
     """
     :param node:
     :param settings:
     :return: LIST OF SHARDS AND THIER DIRECTORIES
     """
+
     # FIND THE IP
     IP = node.ip
     if not machine_metadata.aws_instance_type:
@@ -667,37 +678,37 @@ def get_node_directories(node, settings):
         if dir_.endswith("No such file or directory"):
             continue
         path = dir_.split("/")
-        if len(path) != 8:
+        if len(path) != 7:
             continue
-        index = path[6]
+        index = uuid_to_index_name[path[5]]
         try:
-            shard = int(path[7])
+            shard = int(path[6])
             output.append({
                 "index": index,
                 "i": shard,
                 "dir": dir_
             })
         except Exception as e:
-            if path[7] == "_state":
+            if path[6] == "_state":
                 pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
             else:
                 Log.error("not expected dir={{dir}} for machine {{ip}}", cause=e, dir=dir_, ip=IP)
     return output
 
 
-def clean_out_unused_shards(nodes, shards, settings):
+def clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings):
     if settings.disable_cleaner:
         return
     for node in nodes:
         try:
-            cleaned = _clean_out_one_node(node, shards, settings)
+            cleaned = _clean_out_one_node(node, shards, uuid_to_index_name, settings)
             if cleaned:
                 break  # EXIT EARLY SO WE CAN GET TO THE JOB OF BALANCING
         except Exception as e:
             Log.warning("can not clear {{node}}", node=node.name, cause=e)
 
 
-def _clean_out_one_node(node, all_shards, settings):
+def _clean_out_one_node(node, all_shards, uuid_to_index_name, settings):
     # if not node.name.startswith("spot"):
     #     return
     if last_scrubbing[node.name] > Date("now-12hour"):
@@ -710,7 +721,7 @@ def _clean_out_one_node(node, all_shards, settings):
     ]
 
     please_remove = []
-    for d in get_node_directories(node, settings):
+    for d in get_node_directories(node, uuid_to_index_name, settings):
         if (d.index, d.i) in expected_shards:
             continue
 
@@ -868,13 +879,17 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         if len(existing) >= nodes[destination_node].zone.shards:
             Log.error("should not happen")
 
-        if shard.status == "UNASSIGNED":
-            # destination_node = "secondary"
-            command = wrap({"allocate": {
+        if shard.status == "UNASSIGNED" and red_shards:
+            command = wrap({ALLOCATE_EMPTY_PRIMARY: {
                 "index": shard.index,
                 "shard": shard.i,
-                "node": destination_node,  # nodes[i].name,
-                "allow_primary": bool(red_shards)
+                "node": destination_node  # nodes[i].name,
+            }})
+        elif shard.status == "UNASSIGNED" and not red_shards:
+            command = wrap({ALLOCATE_REPLICA: {
+                "index": shard.index,
+                "shard": shard.i,
+                "node": destination_node  # nodes[i].name,
             }})
         elif shard.status == "STARTED":
             _move = {
