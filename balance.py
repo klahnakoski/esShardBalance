@@ -231,12 +231,20 @@ def assign_shards(settings):
         num_replicas = sum(replicas_per_zone[g.index].values())
         if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
-            response = http.put(path + "/" + g.index + "/_settings", json={"index.recovery.initial_shards": 1})
+            response = http.put(
+                path + "/" + g.index + "/_settings",
+                json={"index.recovery.initial_shards": 1}
+            )
             Log.note("Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
 
             # CHANGE NUMBER OF REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index": {"number_of_replicas": num_replicas-1}})
-            Log.note("Update to {{num}} replicas for {{index}}\n{{result}}", num=num_replicas, index=g.index, result=json2value(utf82unicode(response.content)))
+            Log.note(
+                "Update to {{num}} replicas for {{index}}\n{{result}}",
+                num=num_replicas,
+                index=g.index,
+                result=json2value(utf82unicode(response.content))
+            )
 
         for n in nodes:
             if n.role == 'd':

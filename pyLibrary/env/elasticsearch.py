@@ -16,25 +16,24 @@ from collections import Mapping
 from copy import deepcopy
 
 import mo_json
+from jx_python import jx
+from mo_dots import coalesce, Null, Data, set_default, listwrap, literal_field, ROOT_PATH, concat_field
+from mo_dots import wrap
+from mo_dots.lists import FlatList
+from mo_json.typed_encoder import json2typed
+from mo_kwargs import override
 from mo_logs import Log, strings
 from mo_logs.exceptions import Except
 from mo_logs.strings import utf82unicode
-from mo_threads import Lock
-from mo_dots import coalesce, Null, Data, set_default, join_field, split_field, listwrap, literal_field, \
-    ROOT_PATH, concat_field
-from mo_dots import wrap
-from mo_dots.lists import FlatList
-from pyLibrary import convert
-from pyLibrary.env import http
-from mo_json.typed_encoder import json2typed
 from mo_math import Math
 from mo_math.randoms import Random
-from mo_kwargs import override
-from jx_python import jx
+from mo_threads import Lock
 from mo_threads import ThreadedQueue
 from mo_threads import Till
 from mo_times.dates import Date
 from mo_times.timer import Timer
+from pyLibrary import convert
+from pyLibrary.env import http
 
 ES_STRUCT = ["object", "nested"]
 ES_NUMERIC_TYPES = ["long", "integer", "double", "float"]
@@ -260,7 +259,6 @@ class Index(Features):
         for name, status in result._indices.items():
             if status._shards.failed > 0:
                 Log.error("Failure to delete from {{index}}", index=name)
-
 
     def extend(self, records):
         """
