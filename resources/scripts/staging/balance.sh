@@ -2,7 +2,7 @@
 
 # FOR USE ON THE MANAGER MACHINE
 
-cd ~/esShardBalancer
+cd ~/esShardBalancer6
 export PYTHONPATH=.
 python27 balance.py --settings=resources/config/staging/balance.json >& /dev/null < /dev/null &
 disown -h
