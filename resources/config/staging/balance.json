@@ -1,9 +1,9 @@
 {
     "zones":[
         {
-            "name":"spot",
-            "risky":true,
-            "shards":2
+            "name": "spot",
+            "risky": true,
+            "shards": 2
         },
         {
             "name":"primary",
@@ -19,10 +19,10 @@
         }
     ],
 	"allocate":[
-		{
-			"name": "saved_queries*",
-			"zone": "spot",
-			"shards": 5
+        {
+            "name": "saved_queries*",
+            "zone": "spot",
+            "shards": 5
         },
         {
             "name": "coverage2*",
@@ -38,7 +38,7 @@
             "name": "unittest*",
             "zone": "spot",
             "shards": 1
-		}
+        }
 	],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
@@ -71,13 +71,14 @@
         "treeherder*"
     ],
     "elasticsearch": {
-        "host": "http://activedata.allizom.org",
+        "host": "http://34.215.198.169",
         "port": 9200,
         "debug": true
     },
     "constants":{
         "pyLibrary.env.http.default_headers":{
-            "referer":"https://wiki.mozilla.org/Auto-tools/Projects/ActiveData"
+            "referer":"https://wiki.mozilla.org/Auto-tools/Projects/ActiveData",
+            "Content-Type": "application/json"
         }
     },
     "debug": {
@@ -102,7 +103,7 @@
                 "max_interval": "5minute",
                 "from_address": "klahnakoski@mozilla.com",
                 "to_address": "klahnakoski@mozilla.com",
-                "subject": "[ALERT][Manager] Problem with esShardBalancer",
+                "subject": "[ALERT][Manager6] Problem with esShardBalancer6",
                 "$ref": "file://~/private.json#aws_credentials"
             }
         ]
