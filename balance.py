@@ -11,6 +11,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
+import json
+from collections import Mapping
 from copy import copy
 
 import boto
@@ -242,11 +244,12 @@ def assign_shards(settings):
         num_replicas = sum(replicas_per_zone[g.index].values())
         if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
-            response = http.put(
-                path + "/" + g.index + "/_settings",
-                json={"index.recovery.initial_shards": 1}
-            )
-            Log.note("Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
+            # MAY NOT BE NEEDED BECAUSE WE NOW ARE ABLE TO FORCE ALLOCATE SHARDS
+            # response = http.put(
+            #     path + "/" + g.index + "/_settings",
+            #     json={"index.recovery.initial_shards": 1}
+            # )
+            # Log.note("Number of shards required {{index}}\n{{result}}", index=g.index, result=json2value(utf82unicode(response.content)))
 
             # CHANGE NUMBER OF REPLICAS
             response = http.put(path + "/" + g.index + "/_settings", json={"index": {"number_of_replicas": num_replicas-1}})
@@ -578,6 +581,7 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                 continue
 
             command = wrap({ALLOCATE_STALE_PRIMARY: {
+                "accept_data_loss": True,
                 "index": d.index,
                 "shard": d.i,
                 "node": node.name  # nodes[i].name
@@ -594,9 +598,12 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
             response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
             result = json2value(utf82unicode(response.content))
             if response.status_code not in [200, 201] or not result.acknowledged:
-                main_reason = strings.between(result.error, "[NO", "]")
+                if isinstance(result.error, Mapping):
+                    main_reason = result.error.root_cause.reason
+                else:
+                    main_reason = strings.between(result.error, "[NO", "]")
 
-                if main_reason.find("shard cannot be allocated on same node")!=-1:
+                if main_reason.find("shard cannot be allocated on same node") != -1:
                     pass
                     Log.note("ok: ES automatically initialized already")
                 elif main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
@@ -1038,13 +1045,13 @@ def main():
     try:
         response = http.put(
             path + "/_cluster/settings",
-            data='{"persistent": {"index.recovery.initial_shards": 1, "action.write_consistency": 1}}'
+            data='{"persistent": {"index.recovery.initial_shards": 1}}'
         )
         Log.note("ONE SHARD IS ENOUGH TO ALLOW WRITES: {{result}}", result=response.all_content)
 
         response = http.put(
             path + "/_cluster/settings",
-            data=value2json(
+            data=json.dumps(
                 {
                     "persistent": {
                         "cluster.routing.allocation.enable": "none",
@@ -1052,6 +1059,7 @@ def main():
                         "cluster.routing.allocation.awareness.force.zone.values": ""
                     },
                     "transient": {
+                        "cluster.routing.allocation.enable": "none",
                         "cluster.routing.allocation.awareness.attributes": "",
                         "cluster.routing.allocation.awareness.force.zone.values": ""
                     }
