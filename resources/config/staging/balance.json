@@ -37,7 +37,7 @@
         {
             "name": "unittest*",
             "zone": "spot",
-            "shards": 2
+            "shards": 1
         }
     ],
     "connect": {
