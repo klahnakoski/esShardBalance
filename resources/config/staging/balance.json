@@ -36,11 +36,6 @@
         },
         {
             "name": "unittest*",
-            "zone": "primary",
-            "shards": 0
-        },
-        {
-            "name": "unittest*",
             "zone": "spot",
             "shards": 2
         }
