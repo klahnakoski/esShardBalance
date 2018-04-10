@@ -888,6 +888,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         if shard.status == "UNASSIGNED" and red_shards:
             command = wrap({ALLOCATE_EMPTY_PRIMARY: {
+                # "accept_data_loss": True,
                 "index": shard.index,
                 "shard": shard.i,
                 "node": destination_node  # nodes[i].name,
