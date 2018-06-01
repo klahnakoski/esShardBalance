@@ -603,7 +603,7 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                 else:
                     main_reason = strings.between(result.error, "[NO", "]")
 
-                if main_reason.find("shard cannot be allocated on same node") != -1:
+                if "shard cannot be allocated on same node" in main_reason:
                     pass
                     Log.note("ok: ES automatically initialized already")
                 elif main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
@@ -888,7 +888,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         if shard.status == "UNASSIGNED" and red_shards:
             command = wrap({ALLOCATE_EMPTY_PRIMARY: {
-                # "accept_data_loss": True,
+                "accept_data_loss": True,
                 "index": shard.index,
                 "shard": shard.i,
                 "node": destination_node  # nodes[i].name,
