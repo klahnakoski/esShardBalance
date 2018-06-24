@@ -26,8 +26,8 @@
         },
         {
             "name": "coverage2*",
-            "zone": "primary",
-            "shards": 0
+            "zone": "spot",
+            "shards": 1
         },
         {
             "name": "repo*",

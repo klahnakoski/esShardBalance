@@ -603,8 +603,9 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                 else:
                     main_reason = strings.between(result.error, "[NO", "]")
 
-                if "shard cannot be allocated on same node" in main_reason:
-                    pass
+                if main_reason == None:
+                    Log.note("Failure for unknwon reason")
+                elif "shard cannot be allocated on same node" in main_reason:
                     Log.note("ok: ES automatically initialized already")
                 elif main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
                     pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
@@ -1044,11 +1045,11 @@ def main():
     path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
 
     try:
-        response = http.put(
-            path + "/_cluster/settings",
-            data='{"persistent": {"index.recovery.initial_shards": 1}}'
-        )
-        Log.note("ONE SHARD IS ENOUGH TO ALLOW WRITES: {{result}}", result=response.all_content)
+        # response = http.put(
+        #     path + "/_cluster/settings",
+        #     data='{"persistent": {"index.recovery.initial_shards": 1}}'
+        # )
+        # Log.note("ONE SHARD IS ENOUGH TO ALLOW WRITES: {{result}}", result=response.all_content)
 
         response = http.put(
             path + "/_cluster/settings",
