@@ -688,7 +688,12 @@ def get_node_directories(node, uuid_to_index_name, settings):
         path = dir_.split("/")
         if len(path) != 7:
             continue
-        index = uuid_to_index_name[path[5]]
+        index = uuid_to_index_name.get(path[5])
+        if not index:
+            Log.warning("not expected dir={{dir}} for machine {{ip}}", dir=dir_, ip=IP)
+            continue  # SOMETIMES THERE ARE JUNK DIRECTORIES
+        if path[6] == "_state":
+            continue  # SOMETIMES THERE ARE _state DIRECTORIES
         try:
             shard = int(path[6])
             output.append({
@@ -697,10 +702,7 @@ def get_node_directories(node, uuid_to_index_name, settings):
                 "dir": dir_
             })
         except Exception as e:
-            if path[6] == "_state":
-                pass  # SOMETIMES WE HAVE "_state" SUB-DIRECTORIES
-            else:
-                Log.error("not expected dir={{dir}} for machine {{ip}}", cause=e, dir=dir_, ip=IP)
+            Log.error("not expected dir={{dir}} for machine {{ip}}", cause=e, dir=dir_, ip=IP)
     return output
 
 
