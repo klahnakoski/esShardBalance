@@ -35,10 +35,21 @@
             "shards": 3
 		},
         {
-            "name": "unittest*",
+            "name": "unittest20180729*",
             "zone": "primary",
             "shards": 0
+		},
+        {
+            "name": "unittest201808*",
+            "zone": "primary",
+            "shards": 0
+		},
+        {
+            "name": "unittest*",
+            "zone": "spot",
+            "shards": 1
 		}
+
 	],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
