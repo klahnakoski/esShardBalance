@@ -36,8 +36,8 @@
 		},
         {
             "name": "unittest*",
-            "zone": "spot",
-            "shards": 1
+            "zone": "primary",
+            "shards": 0
 		}
 	],
     "connect": {
