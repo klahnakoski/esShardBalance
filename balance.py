@@ -459,7 +459,7 @@ def assign_shards(settings):
     if rebalance_candidates:
         for z, b in rebalance_candidates.items():
             Log.note("{{num}} shards can be moved to better location within {{zone|quote}} zone", zone=z, num=len(b))
-            allocate(CONCURRENT, b, {z}, "not balanced", 4, settings)
+            allocate(CONCURRENT, b, {z}, "not balanced", 7, settings)
     else:
         Log.note("No shards need to be balanced")
 
@@ -481,7 +481,7 @@ def assign_shards(settings):
         for zone_name, assign in dup_shards.items():
             # Log.note("{{dups}}", dups=assign)
             Log.note("{{num}} shards can be duplicated between zones", num=len(assign))
-            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 7, settings)
+            allocate(CONCURRENT, assign, {zone_name}, "inter-zone duplicate shards", 6, settings)
     else:
         Log.note("No inter-zone duplication remaining")
 
@@ -832,13 +832,14 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
                 full_nodes.append(n)
-            # TODO: Figure out when shard limitation canbe used, and when not
-            # elif move.mode_priority >= 3 and len(alloc.shards) >= alloc.max_allowed:
-            #     list_node_weight[i] = 0
-            #     good_reasons += 1
+            elif move.mode_priority >= 7 and len(alloc.shards) >= alloc.max_allowed:
+                # TODO: Figure out when shard limitation canbe used, and when not
+                # THIS IS REQUIRED TO PREVENT SHARDS CONSTANTLY MOVING AROUND NODES
+                list_node_weight[i] = 0
+                good_reasons += 1
             elif move.reason == "slightly better balance" and (
-                        len(alloc.shards) >= alloc.min_allowed or  # IF THERE IS A MIS-BALANCE THEN THERE MUST BE A NODE WITH **LESS** THAN MINIMUM NUMBER OF SHARDS (PROBABLY FULL)
-                        n.name in current_moving_shards.to_node    # SLOW DOWN MOVEMENT OF SHARDS, ENSURING THEY ARE PROPERLY ACCOUNTED FOR
+                len(alloc.shards) >= alloc.min_allowed or  # IF THERE IS A MIS-BALANCE THEN THERE MUST BE A NODE WITH **LESS** THAN MINIMUM NUMBER OF SHARDS (PROBABLY FULL)
+                n.name in current_moving_shards.to_node  # SLOW DOWN MOVEMENT OF SHARDS, ENSURING THEY ARE PROPERLY ACCOUNTED FOR
             ):
                 list_node_weight[i] = 0
 

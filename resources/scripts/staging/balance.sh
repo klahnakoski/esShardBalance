@@ -2,6 +2,8 @@
 
 # FOR USE ON THE MANAGER MACHINE
 
+chmod u+x balance.py
+
 cd ~/esShardBalancer
 export PYTHONPATH=.
 python27 balance.py --settings=resources/config/staging/balance.json >& /dev/null < /dev/null &
