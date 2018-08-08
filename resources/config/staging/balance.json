@@ -70,9 +70,19 @@
             "shards": 0
         },
         {
+            "name": "unittest20180729*",
+            "zone": "spot",
+            "shards": 2
+        },
+        {
             "name": "unittest201808*",
             "zone": "primary",
             "shards": 0
+        },
+        {
+            "name": "unittest201808*",
+            "zone": "spot",
+            "shards": 2
         },
         {
             "name": "unittest*",
