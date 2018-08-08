@@ -30,8 +30,23 @@
             "shards": 1
         },
         {
+            "name": "coverage20180801*",
+            "zone": "primary",
+            "shards": 1
+        },
+        {
             "name": "coverage20180802*",
             "zone": "spot",
+            "shards": 1
+        },
+        {
+            "name": "coverage20180802*",
+            "zone": "primary",
+            "shards": 1
+        },
+        {
+            "name": "coverage201807*",
+            "zone": "primary",
             "shards": 1
         },
         {
