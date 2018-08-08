@@ -1,56 +1,70 @@
 {
-    "zones":[
+    "zones": [
         {
-            "name":"spot",
-            "risky":true,
-            "shards":2
+            "name": "spot",
+            "risky": true,
+            "shards": 2
         },
         {
-            "name":"primary",
-            "risky":false,
-            "shards":1
+            "name": "primary",
+            "risky": false,
+            "shards": 1
         }
     ],
-    "nodes":[
+    "nodes": [
         {
-            "name":"tertiary",
+            "name": "tertiary",
             "disk": 0,
             "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
         }
     ],
-	"allocate":[
-		{
-			"name": "saved_queries*",
-			"zone": "spot",
-			"shards": 5
+    "allocate": [
+        {
+            "name": "saved_queries*",
+            "zone": "spot",
+            "shards": 5
+        },
+        {
+            "name": "coverage20180801*",
+            "zone": "spot",
+            "shards": 1
+        },
+        {
+            "name": "coverage20180802*",
+            "zone": "spot",
+            "shards": 1
+        },
+        {
+            "name": "coverage201807*",
+            "zone": "spot",
+            "shards": 1
         },
         {
             "name": "coverage2*",
             "zone": "primary",
             "shards": 0
-		},
+        },
         {
             "name": "repo*",
             "zone": "spot",
             "shards": 3
-		},
+        },
         {
             "name": "unittest20180729*",
             "zone": "primary",
             "shards": 0
-		},
+        },
         {
             "name": "unittest201808*",
             "zone": "primary",
             "shards": 0
-		},
+        },
         {
             "name": "unittest*",
             "zone": "spot",
             "shards": 1
-		}
-
-	],
+        }
+    ],
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
         "user": "ec2-user",
@@ -61,16 +75,18 @@
         "password": "",
         "banner_timeout": 30
     },
-    "finally":{
+    "finally": {
         "/_cluster/settings": [
-            {"transient": {
-                "cluster.routing.allocation.disk.threshold_enabled" : true,
-                "cluster.routing.allocation.disk.watermark.low": "40%"
-            }},
+            {
+                "transient": {
+                    "cluster.routing.allocation.disk.threshold_enabled": true,
+                    "cluster.routing.allocation.disk.watermark.low": "40%"
+                }
+            },
             {"persistent": {"cluster.routing.allocation.enable": "all"}}
         ]
     },
-    "replication_priority":[
+    "replication_priority": [
         "saved*",
         "branches*",
         "repo*",
@@ -86,9 +102,9 @@
         "port": 9200,
         "debug": true
     },
-    "constants":{
-        "pyLibrary.env.http.default_headers":{
-            "referer":"https://wiki.mozilla.org/Auto-tools/Projects/ActiveData"
+    "constants": {
+        "pyLibrary.env.http.default_headers": {
+            "referer": "https://wiki.mozilla.org/Auto-tools/Projects/ActiveData"
         }
     },
     "debug": {
@@ -101,14 +117,14 @@
             {
                 "log_type": "console"
             },
-			{
-				"class": "logging.handlers.RotatingFileHandler",
-				"filename": "logs/balance.log",
-				"maxBytes": 10000000,
-				"backupCount": 10,
-				"encoding": "utf8"
-			},
-			{
+            {
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": "logs/balance.log",
+                "maxBytes": 10000000,
+                "backupCount": 10,
+                "encoding": "utf8"
+            },
+            {
                 "log_type": "ses",
                 "max_interval": "5minute",
                 "from_address": "klahnakoski@mozilla.com",
