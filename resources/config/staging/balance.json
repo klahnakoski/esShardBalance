@@ -19,40 +19,12 @@
         }
     ],
     "allocate": [
+        // WARNING: CODE MATCHES ON (name, zone) PAIRS: BE SURE TO DECLARE BOTH IF YOU WANT TO OVERIDE shards
+        // FIRST MATCH IS USED
         {
             "name": "saved_queries*",
             "zone": "spot",
             "shards": 5
-        },
-        {
-            "name": "coverage20180801*",
-            "zone": "spot",
-            "shards": 1
-        },
-        {
-            "name": "coverage20180801*",
-            "zone": "primary",
-            "shards": 1
-        },
-        {
-            "name": "coverage20180802*",
-            "zone": "spot",
-            "shards": 1
-        },
-        {
-            "name": "coverage20180802*",
-            "zone": "primary",
-            "shards": 1
-        },
-        {
-            "name": "coverage201807*",
-            "zone": "primary",
-            "shards": 1
-        },
-        {
-            "name": "coverage201807*",
-            "zone": "spot",
-            "shards": 1
         },
         {
             "name": "coverage2*",
@@ -63,26 +35,6 @@
             "name": "repo*",
             "zone": "spot",
             "shards": 3
-        },
-        {
-            "name": "unittest20180729*",
-            "zone": "primary",
-            "shards": 0
-        },
-        {
-            "name": "unittest20180729*",
-            "zone": "spot",
-            "shards": 2
-        },
-        {
-            "name": "unittest201808*",
-            "zone": "primary",
-            "shards": 0
-        },
-        {
-            "name": "unittest201808*",
-            "zone": "spot",
-            "shards": 2
         },
         {
             "name": "unittest*",
