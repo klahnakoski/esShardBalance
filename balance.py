@@ -648,6 +648,10 @@ def get_node_directories(node, uuid_to_index_name, settings):
     if not IP:
         Log.error("Expecting an ip address for {{node}}", node=node.name)
 
+    if IP == '52.37.182.91':  # SKIP TUID SERVER
+        Log.note("Hardcoded: Skipping TUID server at 52.37.182.91")
+        return Null
+
     Log.note("using ip {{ip}}", ip=IP)
 
     # SETUP FABRIC
