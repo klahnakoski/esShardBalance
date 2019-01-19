@@ -42,6 +42,7 @@ DEBUG = True
 CONCURRENT = 1  # NUMBER OF SHARDS TO MOVE CONCURRENTLY, PER NODE
 BILLION = 1024 * 1024 * 1024
 BIG_SHARD_SIZE = 2 * BILLION  # SIZE WHEN WE SHOULD BE MOVING ONLY ONE SHARD AT A TIME
+MAX_MOVE_FAILURES = 3  # STOP TRYING TO MOVE
 
 current_moving_shards = FlatList()  # BECAUSE ES WILL NOT TELL US WHERE THE SHARDS ARE MOVING TO
 
@@ -328,6 +329,9 @@ def assign_shards(settings):
                 if s.status == "UNASSIGNED":
                     high_risk_shards.append(s)
                     break  # ONLY NEED ONE
+                # else:  # THIS IS NOT GOOD BECAUSE MOVING DUPLICATED SHARDS IS LOWER PRIORITY THAN ASSIGNING REPLICAS
+                #     # PICK ONE
+                #     high_risk_shards.append(Random.sample([r for r in replicas if r.type == 'r'], 1)[0])
     if high_risk_shards:
         # TODO: Some indexes have no safe zone, so `- risky_zone_names` is a bad strategy
         Log.note("{{num}} high risk shards found", num=len(high_risk_shards))
@@ -930,8 +934,11 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
         result = json2value(utf82unicode(response.content))
         if response.status_code not in [200, 201] or not result.acknowledged:
-            move_failures += 1
             main_reason = strings.between(result.error, "[NO", "]")
+            if "target node version" in main_reason:
+                continue
+
+            move_failures += 1
             if main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
                 pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
                 Log.note("Allocation failed: zone full. ES zone-based shard balancer activated")
@@ -950,7 +957,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     reason=main_reason,
                     error=result.error
                 )
-            if move_failures >= 3:
+            if move_failures >= MAX_MOVE_FAILURES:
                 Log.warning("{{num}} consecutive failed moves. Starting over.", num=move_failures)
                 return
         else:

@@ -13,9 +13,19 @@
     ],
     "nodes": [
         {
-            "name": "tertiary",
+            "name": "1",
             "disk": 0,
-            "memory": 0  // SHARD BALANCER WILL MOVE SHARDS OFF OF NODE
+            "memory": 0
+        },
+        {
+            "name": "2",
+            "disk": 0,
+            "memory": 0
+        },
+        {
+            "name": "3",
+            "disk": 0,
+            "memory": 0
         }
     ],
     "allocate": [
