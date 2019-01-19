@@ -935,7 +935,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         result = json2value(utf82unicode(response.content))
         if response.status_code not in [200, 201] or not result.acknowledged:
             main_reason = strings.between(result.error, "[NO", "]")
-            if "target node version" in main_reason:
+            if main_reason and "target node version" in main_reason:
                 continue
 
             move_failures += 1
