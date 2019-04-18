@@ -7,34 +7,31 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
-import json
 from collections import Mapping
 from copy import copy
+import json
 
 import boto
 import boto.ec2
 import boto.vpc
-import mo_json_config
 from fabric.api import settings as fabric_settings
 from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
-from future.utils import text_type
+
 from jx_python import jx
 from mo_collections import UniqueIndex
-from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
-from mo_json import json2value, value2json
-from mo_json import utf82unicode
-from mo_logs import Log, strings, machine_metadata, startup, constants
-from mo_math import SUM, MIN, Math, MAX
-from mo_threads import Thread, Signal, Till
-from mo_times import Date
-
+from mo_dots import Data, FlatList, Null, coalesce, listwrap, literal_field, unwrap, wrap, wrap_leaves
+from mo_future import text_type
+from mo_json import json2value, utf82unicode, value2json
+import mo_json_config
+from mo_logs import Log, constants, machine_metadata, startup, strings
+from mo_math import MAX, MIN, Math, SUM
 from mo_math.randoms import Random
+from mo_threads import Signal, Thread, Till
+from mo_times import Date
 from pyLibrary.env import http
 
 DEBUG = True
@@ -231,12 +228,19 @@ def assign_shards(settings):
     allocation = UniqueIndex(["index", "node.name"])
     replicas_per_zone = {}  # MAP <index> -> <zone.name> -> #shards
 
+    # SPECIAL CASE FOR TODAY'S COVERAGE
+    exceptions = [{
+        "index": "coverage" + Date.today().format("%Y%m%d") + "_000000",
+        "zone": "primary",
+        "shards": 0
+    }] + list(settings.allocate)
+
     for g, replicas in jx.groupby(shards, "index"):
         Log.note("review replicas of {{index}}", index=g.index)
         num_primaries = len(filter(lambda r: r.type == 'p', replicas))
 
         for zone in zones:
-            override = wrap([i for i in settings.allocate if (i.name == g.index or (i.name.endswith("*") and g.index.startswith(i.name[:-1]))) and i.zone == zone.name])[0]
+            override = wrap([i for i in exceptions if (i.name == g.index or (i.name.endswith("*") and g.index.startswith(i.name[:-1]))) and i.zone == zone.name])[0]
             if override:
                 wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = MIN([coalesce(override.shards, zone.shards), zone.num_nodes])
             else:
@@ -480,6 +484,30 @@ def assign_shards(settings):
             allocate(CONCURRENT, b, {z}, "not balanced", 4, settings)
     else:
         Log.note("No shards need to be balanced")
+
+    # LOOK FOR OPPORTUNITY TO MOVE PRIMARY
+    move_primaries = Data()
+    current_index = "not an index"
+    for g, replicas in jx.groupby(jx.sort(shards, {"index.name": "desc"}), ["index", "i"]):
+        # PRIORITY TO MOST RECENT INDEX
+        # PRIORITY TO SMALLEST INDEX
+        # IF ALL OTHER SHARDS ARE STARTED
+        # BE SURE FOLLOW cancel WITH allocate FOR FASTER RESPONSE
+        g = wrap_leaves(g)
+        replicas = list(replicas)
+        if not g.node:
+            continue
+        _node = nodes[g.node.name]
+        alloc = allocation[g]
+        if (_node.zone.name, g.index) in overloaded_zone_index_pairs:
+            continue
+        for i in range(alloc.max_allowed, len(replicas), 1):
+            i = Random.int(len(replicas))
+            shard = replicas[i]
+            replicas.remove(shard)
+            rebalance_candidates[_node.zone.name] += [shard]
+
+
 
     # LOOK FOR OTHER, SLOWER, DUPLICATION OPPORTUNITIES
     dup_shards = Data()
@@ -861,7 +889,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
                 full_nodes.append(n)
-            elif move.mode_priority >= 3 and len(alloc.shards) >= alloc.max_allowed:
+            elif move.mode_priority >= 5 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
                 good_reasons += 1
             elif move.reason == "slightly better balance" and (
