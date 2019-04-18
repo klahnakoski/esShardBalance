@@ -7,34 +7,31 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
-import json
 from collections import Mapping
 from copy import copy
+import json
 
 import boto
 import boto.ec2
 import boto.vpc
-import mo_json_config
 from fabric.api import settings as fabric_settings
 from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
-from future.utils import text_type
+
 from jx_python import jx
 from mo_collections import UniqueIndex
-from mo_dots import Null, FlatList, Data, wrap, coalesce, wrap_leaves, literal_field, unwrap, listwrap
-from mo_json import json2value, value2json
-from mo_json import utf82unicode
-from mo_logs import Log, strings, machine_metadata, startup, constants
-from mo_math import SUM, MIN, Math, MAX
-from mo_threads import Thread, Signal, Till
-from mo_times import Date
-
+from mo_dots import Data, FlatList, Null, coalesce, listwrap, literal_field, unwrap, wrap, wrap_leaves
+from mo_future import text_type, first
+from mo_json import json2value, utf82unicode, value2json
+import mo_json_config
+from mo_logs import Log, constants, machine_metadata, startup, strings
+from mo_math import MAX, MIN, Math, SUM
 from mo_math.randoms import Random
+from mo_threads import Signal, Thread, Till
+from mo_times import Date
 from pyLibrary.env import http
 
 DEBUG = True
@@ -373,15 +370,24 @@ def assign_shards(settings):
                     if not best_zone or (not best_zone[0].risky and z.risky) or (best_zone[0].risky == z.risky and best_zone[1] > number_of_shards):
                         best_zone = possible_zone, number_of_shards
                     if zones[possible_zone].shards > number_of_shards:
-                        # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS
-                        i = Random.weight([r.siblings for r in realized_replicas])
+                        # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS?
+
+                        i = Random.weight([
+                            # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
+                            r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
+                            for r in realized_replicas
+                        ])
                         shard = realized_replicas[i]
                         over_allocated_shards[possible_zone.name] += [shard]
                         break
                 else:
                     if z == best_zone[0]:
                         continue
-                    i = Random.weight([r.siblings for r in realized_replicas])
+                    i = Random.weight([
+                        # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
+                        r.siblings if bool(best_zone[0].busy) == (r.type != 'p') else 0
+                        for r in realized_replicas
+                    ])
                     shard = realized_replicas[i]
                     # alloc = allocation[g.index, shard.node.name]
                     potential_peers =filter(
@@ -404,7 +410,7 @@ def assign_shards(settings):
     for n in nodes:
         if n.disk and float(n.disk_free) / float(n.disk) < 0.05:
             biggest_shard = jx.sort([s for s in shards if s.node == n], "size").last()
-            if biggest_shard.status=="STARTED":
+            if biggest_shard.status == "STARTED":
                 free_space[n.zone.name] += [biggest_shard]
             else:
                 pass  # TRY AGAIN LATER
@@ -412,6 +418,41 @@ def assign_shards(settings):
         for z, moves in free_space.items():
             Log.note("{{num}} shards can be moved to free up space in {{zone}}", num=len(moves), zone=z)
             allocate(CONCURRENT, moves, {z}, "free space", 3, settings)
+
+    # MOVE PRIMARY OFF busy ZONE
+    move_primaries = Data()
+    current_index = "not an index"
+    is_latest = True
+    for g, replicas in jx.reverse(list(jx.groupby(shards, ["index", "i"]))):
+        # PRIORITY TO MOST RECENT INDEX
+        if g.index != current_index:
+            if len(current_index)>15 and len(g.index)>15 and current_index[0:-15] == g.index[0:-15]:
+                # MORE INDEXES OF SAME ALIAS
+                is_latest = False
+                continue
+            else:
+                current_index = g.index
+                is_latest = True
+
+        # FOR NOW, ONLY MOVE LATEST INDEX IN SERIES
+        if is_latest and all(s == 'STARTED' for s in replicas.status):
+            for is_busy_replica in replicas:
+                if is_busy_replica.node.zone.busy and is_busy_replica.type == 'p':
+                    candidates = [
+                        rr
+                        for rr in replicas
+                        if rr is not is_busy_replica and not rr.node.zone.busy
+                    ]
+                    if candidates:  # SOMETIMES ALL SHARDS ARE IN busy ZONE
+                        other = Random.sample(candidates, 1)[0]
+                        # SWAP
+                        move_primaries[is_busy_replica.node.zone.name] += [is_busy_replica]
+                        allocate(CONCURRENT, [other], {is_busy_replica.node.zone.name}, "move replica into busy zone", 3, settings)
+    if move_primaries:
+        for zone_name, assign in move_primaries.items():
+            Log.note("{{num}} primary shards can be moved to less busy zone", num=len(assign))
+    else:
+        Log.note("No primary shards in busy zone")
 
     # LOOK FOR DUPLICATION OPPORTUNITIES
     # ONLY DUPLICATE PRIMARY SHARDS AT THIS TIME
@@ -469,10 +510,16 @@ def assign_shards(settings):
         if (_node.zone.name, g.index) in overloaded_zone_index_pairs:
             continue
         for i in range(alloc.max_allowed, len(replicas), 1):
-            i = Random.int(len(replicas))
-            shard = replicas[i]
-            replicas.remove(shard)
-            rebalance_candidates[_node.zone.name] += [shard]
+            candidates = [
+                r
+                for r in replicas
+                # DO NOT MOVE PRIMARIES TO buzy ZONES
+                if not _node.zone.busy or r.type != 'p'
+            ]
+            if candidates:
+                shard = Random.sample(candidates, 1)[0]
+                replicas.remove(shard)
+                rebalance_candidates[_node.zone.name] += [shard]
 
     if rebalance_candidates:
         for z, b in rebalance_candidates.items():
@@ -592,7 +639,7 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
             }})
 
             Log.note(
-                "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, assign_to={{node}}",
+                "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
                 motivation="Primary shard assign to known directory",
                 shard=d,
                 node=node.name
@@ -861,7 +908,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     Log.warning("Can not allocate shard {{shard}} to {{node}}", node=n.name, shard=(shard.index, shard.i))
                 list_node_weight[i] = 0
                 full_nodes.append(n)
-            elif move.mode_priority >= 3 and len(alloc.shards) >= alloc.max_allowed:
+            elif move.mode_priority >= 5 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
                 good_reasons += 1
             elif move.reason == "slightly better balance" and (
@@ -923,7 +970,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             Log.error("do not know how to handle")
 
         Log.note(
-            "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, from={{from_node}}, assign_to={{node}}",
+            "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, from={{from_node}}, assign_to={{node}}",
             mode=list(command.keys())[0],
             motivation=move.reason,
             shard=shard,

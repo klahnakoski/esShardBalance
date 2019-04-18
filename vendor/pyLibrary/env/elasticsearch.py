@@ -7,43 +7,28 @@
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
-import re
 from collections import Mapping
 from copy import deepcopy
+import re
 
-import mo_json
-<<<<<<< .mine
-from jx_python import jx
-from mo_dots import coalesce, Null, Data, set_default, listwrap, literal_field, ROOT_PATH, concat_field
-from mo_dots import wrap
-from mo_dots.lists import FlatList
-from mo_json.typed_encoder import json2typed
-from mo_kwargs import override
-||||||| .r630
-=======
 from jx_python import jx
 from jx_python.expressions import jx_expression_to_function
 from jx_python.meta import Column
-from mo_dots import coalesce, Null, Data, set_default, listwrap, literal_field, ROOT_PATH, concat_field, split_field
-from mo_dots import wrap
+from mo_dots import Data, Null, ROOT_PATH, coalesce, concat_field, listwrap, literal_field, set_default, split_field, wrap
 from mo_dots.lists import FlatList
-from mo_future import text_type, binary_type
+from mo_future import binary_type, text_type
+import mo_json
 from mo_json import value2json
-from mo_json.typed_encoder import EXISTS_TYPE, BOOLEAN_TYPE, STRING_TYPE, NUMBER_TYPE, NESTED_TYPE, TYPE_PREFIX
+from mo_json.typed_encoder import BOOLEAN_TYPE, EXISTS_TYPE, NESTED_TYPE, NUMBER_TYPE, STRING_TYPE, TYPE_PREFIX
 from mo_kwargs import override
->>>>>>> .r865
 from mo_logs import Log, strings
 from mo_logs.exceptions import Except
 from mo_logs.strings import utf82unicode
 from mo_math import Math
 from mo_math.randoms import Random
-from mo_threads import Lock
-from mo_threads import ThreadedQueue
-from mo_threads import Till
+from mo_threads import Lock, ThreadedQueue, Till
 from mo_times.dates import Date
 from mo_times.timer import Timer
 from pyLibrary import convert

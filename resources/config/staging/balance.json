@@ -8,6 +8,7 @@
         {
             "name": "primary",
             "risky": false,
+            "busy": true,  // keep primaries off this zone
             "shards": 1
         }
     ],

@@ -1,4 +1,4 @@
-future
+mo-future
 pyLibrary
 ecdsa
 fabric
