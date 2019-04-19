@@ -363,18 +363,19 @@ def assign_shards(settings):
                 # IS THERE A PLACE TO PUT IT?
                 best_zone = None
                 for possible_zone in zones:
-                    number_of_shards = len(filter(
+                    allowed_shards = replicas_per_zone[g.index][possible_zone.name]
+                    current_shards = len(filter(
                         lambda r: r.status in {"INITIALIZING", "STARTED", "RELOCATING"} and r.node.zone.name == possible_zone.name,
                         replicas
                     ))
-                    if not best_zone or (not best_zone[0].risky and z.risky) or (best_zone[0].risky == z.risky and best_zone[1] > number_of_shards):
-                        best_zone = possible_zone, number_of_shards
-                    if zones[possible_zone].shards > number_of_shards:
+                    if not best_zone or (not best_zone[0].risky and z.risky) or (best_zone[0].risky == z.risky and best_zone[1] > current_shards):
+                        best_zone = possible_zone, current_shards
+                    if allowed_shards > current_shards:
                         # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS?
 
                         i = Random.weight([
                             # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
-                            r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
+                            r.siblings if not possible_zone.busy or (r.type != 'p') else 0
                             for r in realized_replicas
                         ])
                         shard = realized_replicas[i]
