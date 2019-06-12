@@ -24,11 +24,12 @@ from fabric.state import env
 from jx_python import jx
 from mo_collections import UniqueIndex
 from mo_dots import Data, FlatList, Null, coalesce, listwrap, literal_field, unwrap, wrap, wrap_leaves
-from mo_future import text_type, first
+from mo_future import text_type
 from mo_json import json2value, utf82unicode, value2json
 import mo_json_config
 from mo_logs import Log, constants, machine_metadata, startup, strings
-from mo_math import MAX, MIN, Math, SUM
+import mo_math
+from mo_math import MAX, MIN, SUM
 from mo_math.randoms import Random
 from mo_threads import Signal, Thread, Till
 from mo_times import Date
@@ -241,7 +242,7 @@ def assign_shards(settings):
                 wrap(replicas_per_zone)[literal_field(g.index)][literal_field(zone.name)] = zone.shards
 
         num_replicas = sum(replicas_per_zone[g.index].values())
-        if Math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
+        if mo_math.round(float(len(replicas)) / float(num_primaries), decimal=0) != num_replicas:
             # DECREASE NUMBER OF REQUIRED REPLICAS
             # MAY NOT BE NEEDED BECAUSE WE NOW ARE ABLE TO FORCE ALLOCATE SHARDS
             # response = http.put(
@@ -262,8 +263,8 @@ def assign_shards(settings):
         for n in nodes:
             if 'data' in n.roles:
                 pro = (float(n.memory) / float(n.zone.memory)) * (replicas_per_zone[g.index][n.zone.name] * num_primaries)
-                min_allowed = Math.floor(pro)
-                max_allowed = Math.ceiling(pro) if n.memory else 0
+                min_allowed = mo_math.floor(pro)
+                max_allowed = mo_math.ceiling(pro) if n.memory else 0
             else:
                 min_allowed = 0
                 max_allowed = 0
@@ -742,7 +743,7 @@ def get_node_directories(node, uuid_to_index_name, settings):
     # CATCH THE OUT-OF-CONTROL LOGGING THAT FILLS DRIVES (AND OTHER NASTINESS)
     for line in drive_space.split("\n"):
         fullness = strings.between(line, " ", "%")
-        if Math.is_integer(fullness) and int(fullness) >= 98:
+        if mo_math.is_integer(fullness) and int(fullness) >= 98:
             Log.warning("Drive at {{ip}} has full drive {{drive|quote}}", ip=IP, drive=line)
 
     output = FlatList()
@@ -1066,7 +1067,7 @@ def cancel(path, shard):
 
 
 def balance_multiplier(shard_count, node_count):
-    return 10 ** (Math.floor(float(shard_count) / float(node_count) + 0.9)-1)
+    return 10 ** (mo_math.floor(float(shard_count) / float(node_count) + 0.9)-1)
 
 
 def convert_table_to_list(table, column_names):
@@ -1165,7 +1166,7 @@ def main():
                 (Till(seconds=30) | please_stop).wait()
 
         Thread.run("loop", loop, please_stop=please_stop)
-        Thread.wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
+        Thread.current().wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
     except Exception as e:
         Log.error("Problem with assign of shards", e)
     finally:
