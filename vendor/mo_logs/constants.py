@@ -6,14 +6,11 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import sys
 
-from mo_dots import set_attr as mo_dots_set_attr
-from mo_dots import wrap, join_field, split_field
+from mo_dots import _set_attr as mo_dots_set_attr, join_field, split_field, wrap
 
 DEBUG = True
 
@@ -31,7 +28,7 @@ def set(constants):
     for k, new_value in constants.leaves():
         errors = []
         try:
-            old_value = mo_dots_set_attr(sys.modules, k, new_value)
+            old_value = mo_dots_set_attr(sys.modules, split_field(k), new_value)
             continue
         except Exception as e:
             errors.append(e)
@@ -42,27 +39,22 @@ def set(constants):
             caller_file = caller_globals["__file__"]
             if not caller_file.endswith(".py"):
                 raise Exception("do not know how to handle non-python caller")
-            caller_module = caller_file[:-3].replace("/", ".")
+            caller_module = caller_file[:-3].replace("\\", "/")
+            path = caller_module.split("/")
+            name = path[-1]
 
-            path = split_field(k)
-            for i, p in enumerate(path):
-                if i == 0:
-                    continue
-                prefix = join_field(path[:1])
-                name = join_field(path[i:])
-                if caller_module.endswith(prefix):
-                    old_value = mo_dots_set_attr(caller_globals, name, new_value)
-                    if DEBUG:
-                        from mo_logs import Log
+            old_value = mo_dots_set_attr(caller_globals, [name], new_value)
+            if DEBUG:
+                from mo_logs import Log
 
-                        Log.note(
-                            "Changed {{module}}[{{attribute}}] from {{old_value}} to {{new_value}}",
-                            module=prefix,
-                            attribute=name,
-                            old_value=old_value,
-                            new_value=new_value
-                        )
-                    break
+                Log.note(
+                    "Changed {{module}}[{{attribute}}] from {{old_value}} to {{new_value}}",
+                    module=caller_module,
+                    attribute=name,
+                    old_value=old_value,
+                    new_value=new_value
+                )
+            break
         except Exception as e:
             errors.append(e)
 

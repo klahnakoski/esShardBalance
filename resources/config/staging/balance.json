@@ -92,7 +92,8 @@
         "pyLibrary.env.http.default_headers": {
             "referer": "https://wiki.mozilla.org/Auto-tools/Projects/ActiveData",
             "Content-Type": "application/json"
-        }
+        },
+        "balance.ACCEPT_DATA_LOSS": false
     },
     "debug": {
         "trace": true,

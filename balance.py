@@ -49,6 +49,7 @@ last_known_node_status = Data()
 last_scrubbing = Data()
 
 
+ACCEPT_DATA_LOSS = False
 ALLOCATE_REPLICA = "allocate_replica"
 ALLOCATE_STALE_PRIMARY = "allocate_stale_primary"
 ALLOCATE_EMPTY_PRIMARY = "allocate_empty_primary"
@@ -633,18 +634,26 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                 continue
 
             command = wrap({ALLOCATE_STALE_PRIMARY: {
-                "accept_data_loss": True,
+                "accept_data_loss": ACCEPT_DATA_LOSS,
                 "index": d.index,
                 "shard": d.i,
                 "node": node.name  # nodes[i].name
             }})
 
-            Log.note(
-                "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
-                motivation="Primary shard assign to known directory",
-                shard=d,
-                node=node.name
-            )
+            if ACCEPT_DATA_LOSS:
+                Log.warning(
+                    "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
+                    motivation="Primary shard assign to known directory with data loss",
+                    shard=d,
+                    node=node.name
+                )
+            else:
+                Log.note(
+                    "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
+                    motivation="Primary shard assign to known directory",
+                    shard=d,
+                    node=node.name
+                )
 
             path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
             response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
@@ -947,11 +956,18 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         if shard.status == "UNASSIGNED" and red_shards:
             command = wrap({ALLOCATE_EMPTY_PRIMARY: {
-                "accept_data_loss": True,
+                "accept_data_loss": ACCEPT_DATA_LOSS,
                 "index": shard.index,
                 "shard": shard.i,
                 "node": destination_node  # nodes[i].name,
             }})
+            if ACCEPT_DATA_LOSS:
+                Log.warning(
+                    "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
+                    motivation="Empty primary shard assigned!",
+                    shard=shard,
+                    node=destination_node
+                )
         elif shard.status == "UNASSIGNED" and not red_shards:
             command = wrap({ALLOCATE_REPLICA: {
                 "index": shard.index,
