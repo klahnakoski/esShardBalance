@@ -10,7 +10,7 @@ from __future__ import absolute_import, division, unicode_literals
 
 import sys
 
-from mo_dots import _set_attr as mo_dots_set_attr, join_field, split_field, wrap
+from mo_dots import _set_attr as mo_dots_set_attr, set_attr as mo_dots_set_attr, split_field, wrap
 
 DEBUG = True
 

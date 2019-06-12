@@ -5,25 +5,16 @@ Copyright (c) 2003-2007  Gustavo Niemeyer <gustavo@niemeyer.net>
 This module offers extensions to the standard Python
 datetime module.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
-
-__license__ = "Simplified BSD"
-
+from __future__ import absolute_import, division, unicode_literals
 
 import datetime
 import string
 import time
-import collections
 
+from mo_future import StringIO, integer_types, is_binary, is_text, Callable
+from . import relativedelta, tz
 
-from mo_future import text_type, StringIO, integer_types, binary_type
-
-from . import relativedelta
-from . import tz
-
-
+__license__ = "Simplified BSD"
 __all__ = ["parse", "parserinfo"]
 
 
@@ -40,7 +31,7 @@ __all__ = ["parse", "parserinfo"]
 class _timelex(object):
 
     def __init__(self, instream):
-        if isinstance(instream, text_type):
+        if is_text(instream):
             instream = StringIO(instream)
         self.instream = instream
         self.wordchars = ('abcdfeghijklmnopqrstuvwxyz'
@@ -315,14 +306,14 @@ class parser(object):
         if res.weekday is not None and not res.day:
             ret = ret+relativedelta.relativedelta(weekday=res.weekday)
         if not ignoretz:
-            if isinstance(tzinfos, collections.Callable) or tzinfos and res.tzname in tzinfos:
-                if isinstance(tzinfos, collections.Callable):
+            if isinstance(tzinfos, Callable) or tzinfos and res.tzname in tzinfos:
+                if isinstance(tzinfos, Callable):
                     tzdata = tzinfos(res.tzname, res.tzoffset)
                 else:
                     tzdata = tzinfos.get(res.tzname)
                 if isinstance(tzdata, datetime.tzinfo):
                     tzinfo = tzdata
-                elif isinstance(tzdata, text_type):
+                elif is_text(tzdata):
                     tzinfo = tz.tzstr(tzdata)
                 elif isinstance(tzdata, integer_types):
                     tzinfo = tz.tzoffset(res.tzname, tzdata)
@@ -709,7 +700,7 @@ def parse(timestr, parserinfo=None, **kwargs):
     # Python 2.x support: datetimes return their string presentation as
     # bytes in 2.x and unicode in 3.x, so it's reasonable to expect that
     # the parser will get both kinds. Internally we use unicode only.
-    if isinstance(timestr, binary_type):
+    if is_binary(timestr):
         timestr = timestr.decode()
     if parserinfo:
         return parser(parserinfo).parse(timestr, **kwargs)
