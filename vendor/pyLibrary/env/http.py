@@ -137,8 +137,9 @@ def request(method, url, headers=None, zip=None, retry=None, **kwargs):
             if 'json' in kwargs:
                 kwargs['data'] = value2json(kwargs['json']).encode('utf8')
                 del kwargs['json']
+                headers["Content-Type"] = "application/json"
 
-            # ZIP
+        # ZIP
             set_default(headers, {'Accept-Encoding': 'compress, gzip'})
 
             if kwargs['zip'] and len(coalesce(kwargs.get('data'))) > 1000:

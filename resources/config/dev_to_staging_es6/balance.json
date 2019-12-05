@@ -55,7 +55,7 @@
     "connect": {
         //USED IN Fabric's `env` GLOBAL CONFIG OBJECT
         "user": "ec2-user",
-        "key_filename": "~/.ssh/aws-pulse-logger.pem",
+        "key_filename": "e:/activedata.pem",
         "disable_known_hosts": true,
         "host_string": "",
         "port": 22,
@@ -85,8 +85,8 @@
         "treeherder*"
     ],
     "elasticsearch": {
-        "host": "http://54.148.242.195",
-        "port": 9200,
+        "host": "http://localhost",
+        "port": 9201,
         "debug": true
     },
     "constants": {

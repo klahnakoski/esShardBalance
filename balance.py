@@ -629,7 +629,7 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
 
     # PICK NON-RISKY NODES FIRST
     for node in jx.sort(list(nodes), "zone.risky"):
-
+        Log.note("review {{node}}", node=node.name)
         for d in get_node_directories(node, uuid_to_index_name, settings):
             if (d.index, d.i) not in red_shards:
                 continue
@@ -1131,6 +1131,7 @@ def main():
 
         response = http.put(
             path + "/_cluster/settings",
+            headers={"Content-Type": "application/json"},
             data=json.dumps(
                 {
                     "persistent": {
@@ -1151,6 +1152,7 @@ def main():
 
         response = http.put(
             path + "/_cluster/settings",
+            headers={"Content-Type": "application/json"},
             data='{"transient": {"cluster.routing.allocation.disk.threshold_enabled" : false}}'
         )
         Log.note("ALLOW ALLOCATION: {{result}}", result=response.all_content)
@@ -1174,7 +1176,7 @@ def main():
             for c in listwrap(command):
                 response = http.put(
                     path + p,
-                    data=value2json(c)
+                    json=c
                 )
                 Log.note("Finally {{command}}\n{{result}}", command=c, result=response.all_content)
 
