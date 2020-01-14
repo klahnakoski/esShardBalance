@@ -868,11 +868,13 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 if p.index == s.index and p.status == "STARTED" and p.type == 'p' and p.i == s.i
             ]
             if primaries:
+                # PRIMARY SHARD IS USED TO INITIALIZE SHARD
                 source_node = primaries[0].node.name if primaries else None
                 outbound_data[literal_field(source_node)] += s.size
 
             inbound_data[literal_field(s.node.name)] += s.size
         elif s.status == "RELOCATING":
+            # WE ALREADY ADDED A VIRTUAL INITIALIZING SHARD TO CATCH inbound_data
             outbound_data[literal_field(s.node.name)] += s.size
 
     Log.note(
