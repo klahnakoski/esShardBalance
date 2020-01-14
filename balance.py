@@ -9,9 +9,9 @@
 #
 from __future__ import absolute_import, division, unicode_literals
 
+import json
 from collections import Mapping
 from copy import copy
-import json
 
 import boto
 import boto.ec2
@@ -21,17 +21,17 @@ from fabric.context_managers import hide
 from fabric.operations import sudo
 from fabric.state import env
 
+import mo_json_config
+import mo_math
 from jx_python import jx
 from mo_collections import UniqueIndex
 from mo_dots import Data, FlatList, Null, coalesce, listwrap, literal_field, unwrap, wrap, wrap_leaves
 from mo_future import text_type
 from mo_json import json2value, utf82unicode, value2json
-import mo_json_config
 from mo_logs import Log, constants, machine_metadata, startup, strings
-import mo_math
 from mo_math import MAX, MIN, SUM
 from mo_math.randoms import Random
-from mo_threads import Signal, Thread, Till
+from mo_threads import Signal, Thread, Till, MAIN_THREAD
 from mo_times import Date
 from pyLibrary.env import http
 
@@ -377,7 +377,7 @@ def assign_shards(settings):
 
                         i = Random.weight([
                             # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
-                            r.siblings if not possible_zone.busy or (r.type != 'p') else 0
+                            r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
                             for r in realized_replicas
                         ])
                         shard = realized_replicas[i]
@@ -699,7 +699,7 @@ def get_node_directories(node, uuid_to_index_name, settings):
     """
     :param node:
     :param settings:
-    :return: LIST OF SHARDS AND THIER DIRECTORIES
+    :return: LIST OF SHARDS AND THEIR DIRECTORIES
     """
 
     # FIND THE IP
@@ -859,10 +859,26 @@ def net_shards_to_move(concurrent, shards, relocating):
 def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, settings):
     moves = jx.sort(ALLOCATION_REQUESTS, ["mode_priority", "replication_priority", "shard.index_size", "shard.i"])
 
-    busy_nodes = Data()
+    inbound_data = outbound_data = Data()  # TODO: SEE IF THIS IS TOO SLOW: NODE ALLOWED INGRESS OR EGRESS, NOT BOTH
     for s in relocating:
         if s.status == "INITIALIZING":
-            busy_nodes[s.node.name] += s.size
+            primaries = [
+                p
+                for p in all_shards
+                if p.index == s.index and p.status == "STARTED" and p.type == 'p' and p.i == s.i
+            ]
+            if primaries:
+                source_node = primaries[0].node.name if primaries else None
+                outbound_data[literal_field(source_node)] += s.size
+
+            inbound_data[literal_field(s.node.name)] += s.size
+        elif s.status == "RELOCATING":
+            outbound_data[literal_field(s.node.name)] += s.size
+
+    Log.note(
+        "Busy nodes:\n{{nodes|json|indent}}",
+        nodes={k: text_type(mo_math.round(v / (1000 * 1000 * 1000), digits=3)) + "G" for k, v in outbound_data.items()}
+    )
 
     done = set()  # (index, i) pair
     move_failures = 0
@@ -872,6 +888,19 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         shard = move.shard
         if (shard.index, shard.i) in done:
             continue
+        source_node = shard.node.name
+
+        if not source_node:
+            primaries = [
+                p
+                for p in all_shards
+                if p.index == shard.index and p.status == "STARTED" and p.type == 'p' and p.i == shard.i
+            ]
+            source_node = primaries[0].node.name if primaries else None
+
+        if source_node and outbound_data[literal_field(source_node)] >= move.concurrent * BIG_SHARD_SIZE:
+            continue
+
         zones = move.to_zone
 
         shards_for_this_index = wrap(jx.filter(all_shards, {
@@ -904,7 +933,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 list_node_weight[i] = 0
             elif n.name in existing_on_nodes:
                 list_node_weight[i] = 0
-            elif busy_nodes[n.name] >= move.concurrent * BIG_SHARD_SIZE:
+            elif inbound_data[literal_field(n.name)] >= move.concurrent * BIG_SHARD_SIZE:
                 list_node_weight[i] = 0
                 good_reasons += 1
             elif n.disk_free == 0 and n.disk > 0:
@@ -922,16 +951,27 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             elif move.mode_priority >= 5 and len(alloc.shards) >= alloc.max_allowed:
                 list_node_weight[i] = 0
                 good_reasons += 1
-            elif move.reason == "slightly better balance" and (
+            elif move.reason in {"not balanced", "slightly better balance"} and (
                         len(alloc.shards) >= alloc.min_allowed or  # IF THERE IS A MIS-BALANCE THEN THERE MUST BE A NODE WITH **LESS** THAN MINIMUM NUMBER OF SHARDS (PROBABLY FULL)
                         n.name in current_moving_shards.to_node    # SLOW DOWN MOVEMENT OF SHARDS, ENSURING THEY ARE PROPERLY ACCOUNTED FOR
             ):
                 list_node_weight[i] = 0
+                good_reasons += 1
 
         if SUM(list_node_weight) == 0:
             if not sent_full_nodes_warning and full_nodes and not good_reasons:
                 sent_full_nodes_warning = True
-                Log.warning("Can not move shard because {{num}} nodes are all full:\n{{full}}", num=len(full_nodes), full=full_nodes)
+                Log.warning(
+                    "Can not move {{shard}} from {{source}} to {{destination}} because {{num}} nodes are all full",
+                    shard=value2json({"index": shard.index, "i": shard.i}),
+                    source=source_node,
+                    destination=zones,
+                    num=len(full_nodes),
+                    full=[
+                        {"name": n.name, "fill": mo_math.round(1 - (n.disk_free / n.disk), digits=2)}
+                        for n in full_nodes
+                    ]
+                )
             continue  # NO SHARDS CAN ACCEPT THIS
 
         while True:
@@ -955,31 +995,34 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         if len(existing) >= nodes[destination_node].zone.shards:
             Log.error("should not happen")
 
-        if shard.status == "UNASSIGNED" and red_shards:
-            command = wrap({ALLOCATE_EMPTY_PRIMARY: {
-                "accept_data_loss": ACCEPT_DATA_LOSS,
-                "index": shard.index,
-                "shard": shard.i,
-                "node": destination_node  # nodes[i].name,
-            }})
-            if ACCEPT_DATA_LOSS:
-                Log.warning(
-                    "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
-                    motivation="Empty primary shard assigned!",
-                    shard=shard,
-                    node=destination_node
-                )
-        elif shard.status == "UNASSIGNED" and not red_shards:
-            command = wrap({ALLOCATE_REPLICA: {
-                "index": shard.index,
-                "shard": shard.i,
-                "node": destination_node  # nodes[i].name,
-            }})
+        # DESTINATION HAS BEEN DECIDED, ISSUE MOVE
+
+        if shard.status == "UNASSIGNED":
+            if red_shards:
+                command = wrap({ALLOCATE_EMPTY_PRIMARY: {
+                    "accept_data_loss": ACCEPT_DATA_LOSS,
+                    "index": shard.index,
+                    "shard": shard.i,
+                    "node": destination_node  # nodes[i].name,
+                }})
+                if ACCEPT_DATA_LOSS:
+                    Log.warning(
+                        "{{motivation}}: {{mode|upper}} index={{shard.index}}, shard={{shard.i}}, type={{shard.type}}, assign_to={{node}}",
+                        motivation="Empty primary shard assigned!",
+                        shard=shard,
+                        node=destination_node
+                    )
+            else:
+                command = wrap({ALLOCATE_REPLICA: {
+                    "index": shard.index,
+                    "shard": shard.i,
+                    "node": destination_node  # nodes[i].name,
+                }})
         elif shard.status == "STARTED":
             _move = {
                 "index": shard.index,
                 "shard": shard.i,
-                "from_node": shard.node.name,
+                "from_node": source_node,
                 "to_node": destination_node
             }
             current_moving_shards.append(_move)
@@ -992,7 +1035,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             mode=list(command.keys())[0],
             motivation=move.reason,
             shard=shard,
-            from_node=shard.node.name,
+            from_node=source_node,
             node=destination_node
         )
 
@@ -1030,7 +1073,10 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             if shard.status == "STARTED":
                 shard.status = "RELOCATING"
             done.add((shard.index, shard.i))
-            busy_nodes[destination_node] += shard.size
+            inbound_data[literal_field(destination_node)] += shard.size
+            if source_node:
+                # `source_node is None` WHEN CLUSTER IS RED
+                outbound_data[literal_field(source_node)] += shard.size
             Log.note(
                 "ok={{result.acknowledged}}",
                 result=result
@@ -1168,7 +1214,7 @@ def main():
                 (Till(seconds=30) | please_stop).wait()
 
         Thread.run("loop", loop, please_stop=please_stop)
-        Thread.current().wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
+        MAIN_THREAD.wait_for_shutdown_signal(please_stop=please_stop, allow_exit=True)
     except Exception as e:
         Log.error("Problem with assign of shards", e)
     finally:
