@@ -216,14 +216,14 @@ def assign_shards(settings):
             # COULD NOT BE FOUND
             current_moving_shards.remove(m)
 
-    # if red_shards:
-    #     Log.warning("Cluster is RED")
-    #     # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
-    #     # ALLOCATE SHARDS INSTEAD
-    #     find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
-    # else:
-    #     # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
-    #     clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
+    if red_shards:
+        Log.warning("Cluster is RED")
+        # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
+        # ALLOCATE SHARDS INSTEAD
+        find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
+    else:
+        # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
+        clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
