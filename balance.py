@@ -216,14 +216,14 @@ def assign_shards(settings):
             # COULD NOT BE FOUND
             current_moving_shards.remove(m)
 
-    if red_shards:
-        Log.warning("Cluster is RED")
-        # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
-        # ALLOCATE SHARDS INSTEAD
-        find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
-    else:
-        # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
-        clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
+    # if red_shards:
+    #     Log.warning("Cluster is RED")
+    #     # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
+    #     # ALLOCATE SHARDS INSTEAD
+    #     find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
+    # else:
+    #     # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
+    #     clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
@@ -375,13 +375,16 @@ def assign_shards(settings):
                     if allowed_shards > current_shards:
                         # TODO: NEED BETTER CHOOSER; NODE WITH MOST SHARDS?
 
-                        i = Random.weight([
-                            # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
-                            r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
-                            for r in realized_replicas
-                        ])
-                        shard = realized_replicas[i]
-                        over_allocated_shards[possible_zone.name] += [shard]
+                        try:
+                            i = Random.weight([
+                                # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
+                                r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
+                                for r in realized_replicas
+                            ])
+                            shard = realized_replicas[i]
+                            over_allocated_shards[possible_zone.name] += [shard]
+                        except Exception as e:
+                            Log.note("could not rebalance {{g}}", g=g)
                         break
                 else:
                     if z == best_zone[0]:
