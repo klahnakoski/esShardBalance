@@ -34,7 +34,7 @@
         {
             "name": ".monitoring-es*",
             "zone": "spot",
-            "shards": 0
+            "shards": 1
         },
         {
             "name": "saved_queries*",
