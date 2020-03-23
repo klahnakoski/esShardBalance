@@ -31,6 +31,11 @@
     ],
     "allocate": [
         {
+            "name": ".monitoring-es*",
+            "zone": "spot",
+            "shards": 0
+        },
+        {
             "name": "saved_queries*",
             "zone": "spot",
             "shards": 5
