@@ -11,6 +11,7 @@ from __future__ import absolute_import, division, unicode_literals
 
 import json
 from collections import Mapping
+from contextlib import contextmanager
 from copy import copy
 
 import boto
@@ -32,7 +33,7 @@ from mo_logs import Log, constants, machine_metadata, startup, strings
 from mo_math import MAX, MIN, SUM
 from mo_math.randoms import Random
 from mo_threads import Signal, Thread, Till, MAIN_THREAD
-from mo_times import Date
+from mo_times import Date, Timer
 from pyLibrary.env import http
 
 DEBUG = True
@@ -49,6 +50,7 @@ ALIVE = "ALIVE"
 last_known_node_status = Data()
 last_scrubbing = Data()
 
+IDENTICAL_NODE_ATTRIBUTE = "xpack.installed"  # SOME node.attr[IDENTICAL_NODE_ATTRIBUTE] ALL THE SAME, REQUIRED FOR IMBALANCED SHARD ALLOCATION
 
 ACCEPT_DATA_LOSS = False
 ALLOCATE_REPLICA = "allocate_replica"
@@ -378,11 +380,13 @@ def assign_shards(settings):
                         try:
                             i = Random.weight([
                                 # DO NOT ASSIGN PRIMARY SHARDS TO BUSY ZONES
-                                r.siblings if bool(possible_zone.busy) == (r.type != 'p') else 0
+                                r.siblings if not possible_zone.busy or (r.type != 'p') else 0
                                 for r in realized_replicas
                             ])
                             shard = realized_replicas[i]
                             over_allocated_shards[possible_zone.name] += [shard]
+                        except ZeroDivisionError as z:
+                            Log.note("could not rebalance {{g}}", g=g)
                         except Exception as e:
                             Log.note("could not rebalance {{g}}", g=g)
                         break
@@ -1046,35 +1050,9 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
         result = json2value(utf82unicode(response.content))
-        if response.status_code not in [200, 201] or not result.acknowledged:
-            main_reason = strings.between(result.error, "[NO", "]")
-            if main_reason and "target node version" in main_reason:
-                continue
 
-            move_failures += 1
-            if main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
-                pass  # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
-                Log.note("Allocation failed: zone full. ES zone-based shard balancer activated")
-            elif main_reason and main_reason.find("after allocation more than allowed") != -1:
-                pass
-                Log.note("Allocation failed: node out of space.")
-            elif "failed to resolve [" in result.error:
-                # LOST A NODE WHILE SENDING UPDATES
-                lost_node_name = strings.between(result.error, "failed to resolve [", "]").strip()
-                Log.warning("Allocation failed: Lost node during allocate {{node}}", node=lost_node_name)
-                nodes[lost_node_name].zone = None
-            else:
-                Log.warning(
-                    "Allocation failed: {{code}} Can not move/allocate:\n\treason={{reason}}\n\tdetails={{error|quote}}",
-                    code=response.status_code,
-                    reason=main_reason,
-                    error=result.error
-                )
-            if move_failures >= MAX_MOVE_FAILURES:
-                Log.warning("{{num}} consecutive failed moves. Starting over.", num=move_failures)
-                return
-        else:
-            move_failures = 0
+        def move_accepted():
+            # CALL ME WHEN MOVE IS ACCEPTED
             if shard.status == "STARTED":
                 shard.status = "RELOCATING"
             done.add((shard.index, shard.i))
@@ -1086,6 +1064,49 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                 "ok={{result.acknowledged}}",
                 result=result
             )
+            return 0
+
+        if response.status_code in [200, 201] and result.acknowledged:
+            move_failures = move_accepted()
+
+        if move_failures >= MAX_MOVE_FAILURES:
+            Log.warning("{{num}} consecutive failed moves. Starting over.", num=move_failures)
+            return
+
+        main_reason = strings.between(result.error, "[NO", "]")
+        if main_reason and "target node version" in main_reason:
+            continue
+
+        move_failures += 1
+        if main_reason and main_reason.find("too many shards on nodes for attribute") != -1:
+            # THIS WILL HAPPEN WHEN THE ES SHARD BALANCER IS ACTIVATED, NOTHING WE CAN DO
+            Log.note("Allocation failed: zone full. ES zone-based shard balancer activated")
+        elif main_reason and main_reason.find("after allocation more than allowed") != -1:
+            Log.note("Allocation failed: node out of space.")
+        elif "failed to resolve [" in result.error:
+            # LOST A NODE WHILE SENDING UPDATES
+            lost_node_name = strings.between(result.error, "failed to resolve [", "]").strip()
+            Log.warning("Allocation failed: Lost node during allocate {{node}}", node=lost_node_name)
+            nodes[lost_node_name].zone = None
+        elif "there are too many copies of the shard" in main_reason:
+            try:
+                with disable_zone_restrications(path):
+                    # TRY AGAIN
+                    Till(seconds=5).wait()
+                    response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
+                    result = json2value(utf82unicode(response.content))
+                    if response.status_code in [200, 201] and result.acknowledged:
+                        move_failures = move_accepted()
+            except Exception as e:
+                Log.warning("retry with disabled zone restrictions seems to have failed", cause=e)
+
+        Log.warning(
+            "Allocation failed: {{code}} Can not move/allocate:\n\treason={{reason}}\n\tdetails={{error|quote}}",
+            code=response.status_code,
+            reason=main_reason,
+            error=result.error
+        )
+
     Log.note("Done making moves")
 
 
@@ -1165,6 +1186,26 @@ def text_to_bytes(size):
     except Exception as e:
         Log.error("not expected", cause=e)
 
+@contextmanager
+def disable_zone_restrications(path):
+    with Timer("Disable zone restrictions"):
+        result = http.put(
+            path + "/_cluster/settings",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({
+                "transient": {"cluster.routing.allocation.awareness.attributes": IDENTICAL_NODE_ATTRIBUTE}
+            })
+        )
+    yield
+    with Timer("Enable zone restrictions"):
+        result = http.put(
+            path + "/_cluster/settings",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({
+                "transient": {"cluster.routing.allocation.awareness.attributes": "zone"}
+            })
+        )
+
 
 def main():
     settings = startup.read_settings()
@@ -1187,13 +1228,21 @@ def main():
                 {
                     "persistent": {
                         "cluster.routing.allocation.enable": "none",
-                        "cluster.routing.allocation.awareness.attributes": "",
-                        "cluster.routing.allocation.awareness.force.zone.values": ""
+                        "cluster.routing.allocation.awareness.attributes": "zone",
+                        "cluster.routing.allocation.awareness.force.zone.values": None,
+                        "cluster.routing.allocation.balance.shard": 0.45,
+                        "cluster.routing.allocation.balance.index": 0.55,
+                        "cluster.routing.allocation.balance.threshold": 1,
+                        "cluster.routing.use_adaptive_replica_selection": True
                     },
                     "transient": {
                         "cluster.routing.allocation.enable": "none",
-                        "cluster.routing.allocation.awareness.attributes": "",
-                        "cluster.routing.allocation.awareness.force.zone.values": ""
+                        "cluster.routing.allocation.awareness.attributes": None,
+                        "cluster.routing.allocation.awareness.force.zone.values": None,
+                        "cluster.routing.allocation.balance.shard": 0.0,
+                        "cluster.routing.allocation.balance.index": 0.0,
+                        "cluster.routing.allocation.balance.threshold": 1000,
+                        "cluster.routing.use_adaptive_replica_selection": True
                     }
                 }
             )

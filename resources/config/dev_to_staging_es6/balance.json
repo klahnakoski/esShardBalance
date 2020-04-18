@@ -37,6 +37,11 @@
             "shards": 1
         },
         {
+            "name": ".tasks",
+            "zone": "spot",
+            "shards": 1
+        },
+        {
             "name": "saved_queries*",
             "zone": "spot",
             "shards": 5
