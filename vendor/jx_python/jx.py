@@ -5,7 +5,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-# Author: Kyle Lahnakoski (kyle@lahnakoski.com)
+# Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
 from __future__ import absolute_import, division, unicode_literals
@@ -17,9 +17,10 @@ from jx_base.query import QueryOp, _normalize_selects
 from jx_base.language import is_op, value_compare
 from jx_python import expressions as _expressions, flat_list, group_by
 from jx_python.containers.cube import Cube
+from jx_python.convert import list2table, list2cube
 from jx_python.cubes.aggs import cube_aggs
 from jx_python.expression_compiler import compile_expression
-from jx_python.expressions import jx_expression_to_function
+from jx_python.expressions import jx_expression_to_function as get
 from jx_python.flat_list import PartFlatList
 from mo_collections.index import Index
 from mo_collections.unique_index import UniqueIndex
@@ -30,7 +31,6 @@ from mo_future import is_text, sort_using_cmp
 from mo_logs import Log
 import mo_math
 from mo_math import MIN, UNION
-from pyLibrary import convert
 
 # A COLLECTION OF DATABASE OPERATORS (RELATIONAL ALGEBRA OPERATORS)
 # JSON QUERY EXPRESSION DOCUMENTATION: https://github.com/klahnakoski/jx/tree/master/docs
@@ -42,13 +42,6 @@ _range = range
 _Column = None
 _merge_type = None
 _ = _expressions
-
-
-def get(expr):
-    """
-    RETURN FUNCTION FOR EXPRESSION
-    """
-    return jx_expression_to_function(expr)
 
 
 def run(query, container=Null):
@@ -105,9 +98,9 @@ def run(query, container=Null):
 
     # AT THIS POINT frum IS IN LIST FORMAT, NOW PACKAGE RESULT
     if query_op.format == "cube":
-        container = convert.list2cube(container)
+        container = list2cube(container)
     elif query_op.format == "table":
-        container = convert.list2table(container)
+        container = list2table(container)
         container.meta.format = "table"
     else:
         container = wrap({"meta": {"format": "list"}, "data": container})
@@ -116,6 +109,7 @@ def run(query, container=Null):
 
 
 groupby = group_by.groupby
+chunk = group_by.chunk
 
 
 def index(data, keys=None):
@@ -487,7 +481,7 @@ THE columns DO NOT GET MARKED WITH NESTED (AS THEY SHOULD)
 type_to_name = {
     int: "long",
     str: "string",
-    text_type: "string",
+    text: "string",
     float: "double",
     Number: "double",
     Data: "object",
@@ -553,15 +547,18 @@ def sort(data, fieldnames=None, already_normalized=False):
         if data == None:
             return Null
 
-        if not fieldnames:
-            return wrap(sort_using_cmp(data, value_compare))
-
-        if already_normalized:
-            formal = fieldnames
+        if isinstance(fieldnames, int):
+            funcs = [(lambda t: t[fieldnames], 1)]
         else:
-            formal = query._normalize_sort(fieldnames)
+            if not fieldnames:
+                return wrap(sort_using_cmp(data, value_compare))
 
-        funcs = [(jx_expression_to_function(f.value), f.sort) for f in formal]
+            if already_normalized:
+                formal = fieldnames
+            else:
+                formal = query._normalize_sort(fieldnames)
+
+            funcs = [(get(f.value), f.sort) for f in formal]
 
         def comparer(left, right):
             for func, sort_ in funcs:
@@ -575,6 +572,8 @@ def sort(data, fieldnames=None, already_normalized=False):
 
         if is_list(data):
             output = FlatList([unwrap(d) for d in sort_using_cmp(data, cmp=comparer)])
+        elif is_text(data):
+            Log.error("Do not know how to handle")
         elif hasattr(data, "__iter__"):
             output = FlatList(
                 [unwrap(d) for d in sort_using_cmp(list(data), cmp=comparer)]
@@ -619,7 +618,7 @@ def filter(data, where):
         return data.filter(where)
 
     if is_container(data):
-        temp = jx_expression_to_function(where)
+        temp = get(where)
         dd = wrap(data)
         return wrap([unwrap(d) for i, d in enumerate(data) if temp(wrap(d), i, dd)])
     else:
@@ -634,6 +633,32 @@ def filter(data, where):
         return wrap(
             [unwrap(d) for d in drill_filter(where, [DataObject(d) for d in data])]
         )
+
+
+def drill(data, path):
+    """
+    ITERATE THROUGH ALL OBJECTS FOUND ALONG path
+    :param data: SOME DATA, OR ITERABLE
+    :param path: DOT-DELIMITED PATH TO REACH INTO
+    :return:
+    """
+    def _drill(d, p):
+        if p:
+            if is_many(d):
+                for dd in d:
+                    for v in _drill(dd, p):
+                        yield v
+            else:
+                for v in _drill(listwrap(d[p[0]]), p[1:]):
+                    yield v
+        elif is_many(d):
+            for dd in d:
+                for v in _drill(dd, p):
+                    yield v
+        else:
+            yield d
+
+    return _drill(data, split_field(path))
 
 
 def drill_filter(esfilter, data):
@@ -950,7 +975,7 @@ def window(data, param):
     edges = param.edges  # columns to gourp by
     where = param.where  # DO NOT CONSIDER THESE VALUES
     sortColumns = param.sort  # columns to sort by
-    calc_value = jx_expression_to_function(
+    calc_value = get(
         param.value
     )  # function that takes a record and returns a value (for aggregation)
     aggregate = param.aggregate  # WindowFunction to apply

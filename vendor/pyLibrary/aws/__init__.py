@@ -5,11 +5,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-# Author: Kyle Lahnakoski (kyle@lahnakoski.com)
+# Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 from __future__ import absolute_import, division, unicode_literals
 
-from mo_future import is_text, is_binary
 import time
 
 from boto import sqs, utils as boto_utils
@@ -23,9 +22,7 @@ from mo_kwargs import override
 from mo_logs import Log, machine_metadata
 from mo_logs.exceptions import Except, suppress_exception
 import mo_math
-from mo_threads import Thread
-from mo_threads.signal import Signal
-from mo_threads.till import Till
+from mo_threads import Thread, Till, Signal
 from mo_times import timer
 from mo_times.durations import Duration, SECOND
 
@@ -108,8 +105,7 @@ class Queue(object):
         return message, payload
 
     def commit(self):
-        pending = self.pending
-        self.pending = []
+        pending, self.pending = self.pending, []
         for p in pending:
             self.queue.delete_message(p)
 
@@ -117,16 +113,19 @@ class Queue(object):
         if self.pending:
             pending, self.pending = self.pending, []
 
-            for p in pending:
-                m = Message()
-                m.set_body(p.get_body())
-                self.queue.write(m)
+            try:
+                for p in pending:
+                    m = Message()
+                    m.set_body(p.get_body())
+                    self.queue.write(m)
 
-            for p in pending:
-                self.queue.delete_message(p)
+                for p in pending:
+                    self.queue.delete_message(p)
 
-            if self.settings.debug:
-                Log.alert("{{num}} messages returned to queue", num=len(pending))
+                if self.settings.debug:
+                    Log.alert("{{num}} messages returned to queue", num=len(pending))
+            except Exception as e:
+                Log.warning("Failed to return {{num}} messages to the queue", num=len(pending), cause=e)
 
     def close(self):
         self.commit()
@@ -149,7 +148,7 @@ def capture_termination_signal(please_stop):
             except Exception as e:
                 e = Except.wrap(e)
                 if "Failed to establish a new connection: [Errno 10060]" in e or "A socket operation was attempted to an unreachable network" in e:
-                    Log.note("AWS Spot Detection has shutdown, probably not a spot node, (http://169.254.169.254 is unreachable)")
+                    Log.note("AWS Spot Detection has shutdown, this is probably not a spot node, (http://169.254.169.254 is unreachable)")
                     return
                 elif seen_problem:
                     # IGNORE THE FIRST PROBLEM
@@ -159,7 +158,7 @@ def capture_termination_signal(please_stop):
                 (Till(seconds=61) | please_stop).wait()
             (Till(seconds=11) | please_stop).wait()
 
-    Thread.run("listen for termination", worker)
+    Thread.run("listen for termination", worker).release()
 
 
 def get_instance_metadata(timeout=None):
@@ -193,6 +192,6 @@ def _get_metadata_from_from_aws(please_stop):
             machine_metadata.aws_instance_type = ec2.instance_type
             machine_metadata.name = ec2.instance_id
 
-Thread.run("get aws machine metadata", _get_metadata_from_from_aws)
+Thread.run("get aws machine metadata", _get_metadata_from_from_aws).release()
 
 from . import s3
