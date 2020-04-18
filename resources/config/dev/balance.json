@@ -49,7 +49,7 @@
         "debug": true
     },
     "constants":{
-        "pyLibrary.env.http.default_headers":{
+        "mo_http.http.default_headers":{
             "referer":"https://wiki.mozilla.org/Auto-tools/Projects/ActiveData"
         }
     },

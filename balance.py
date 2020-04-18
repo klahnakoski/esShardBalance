@@ -27,14 +27,14 @@ import mo_math
 from jx_python import jx
 from mo_collections import UniqueIndex
 from mo_dots import Data, FlatList, Null, coalesce, listwrap, literal_field, unwrap, wrap, wrap_leaves
-from mo_future import text_type
-from mo_json import json2value, utf82unicode, value2json
+from mo_future import text
+from mo_http import http
+from mo_json import json2value, value2json
 from mo_logs import Log, constants, machine_metadata, startup, strings
 from mo_math import MAX, MIN, SUM
 from mo_math.randoms import Random
 from mo_threads import Signal, Thread, Till, MAIN_THREAD
 from mo_times import Date, Timer
-from pyLibrary.env import http
 
 DEBUG = True
 
@@ -62,7 +62,7 @@ def assign_shards(settings):
     """
     ASSIGN THE UNASSIGNED SHARDS
     """
-    path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
+    path = settings.elasticsearch.host + ":" + text(settings.elasticsearch.port)
     # GET LIST OF NODES
     # coordinator    26.2gb
     # secondary     383.7gb
@@ -259,7 +259,7 @@ def assign_shards(settings):
                 "Update to {{num}} replicas for {{index}}\n{{result}}",
                 num=num_replicas,
                 index=g.index,
-                result=json2value(utf82unicode(response.content))
+                result=json2value(response.content.decode('utf8'))
             )
 
         for n in nodes:
@@ -663,9 +663,9 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                     node=node.name
                 )
 
-            path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
+            path = settings.elasticsearch.host + ":" + text(settings.elasticsearch.port)
             response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-            result = json2value(utf82unicode(response.content))
+            result = json2value(response.content.decode('utf8'))
             if response.status_code not in [200, 201] or not result.acknowledged:
                 if isinstance(result.error, Mapping):
                     main_reason = result.error.root_cause.reason
@@ -699,7 +699,6 @@ def find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards):
                     "ok={{result.acknowledged}}",
                     result=result
                 )
-
 
 
 def get_node_directories(node, uuid_to_index_name, settings):
@@ -809,7 +808,7 @@ def _clean_out_one_node(node, all_shards, uuid_to_index_name, settings):
             continue
 
         with hide('output'):
-            young_files = text_type(sudo("find "+d.dir+" -cmin -120 -type f"))
+            young_files = text(sudo("find "+d.dir+" -cmin -120 -type f"))
             if young_files:
                 Log.error("attempt to remove young files")
             else:
@@ -828,7 +827,7 @@ ALLOCATION_REQUESTS = []
 
 def allocate(concurrent, proposed_shards, zones, reason, mode_priority, settings):
     if DEBUG:
-        assert all(isinstance(z, text_type) for z in zones)
+        assert all(isinstance(z, text) for z in zones)
     for s in proposed_shards:
         move = {
             "shard": s,
@@ -886,7 +885,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
     Log.note(
         "Busy nodes:\n{{nodes|json|indent}}",
-        nodes={k: text_type(mo_math.round(v / (1000 * 1000 * 1000), digits=3)) + "G" for k, v in outbound_data.items()}
+        nodes={k: text(mo_math.round(v / (1000 * 1000 * 1000), digits=3)) + "G" for k, v in outbound_data.items()}
     )
 
     done = set()  # (index, i) pair
@@ -1049,7 +1048,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
         )
 
         response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-        result = json2value(utf82unicode(response.content))
+        result = json2value(response.content.decode('utf8'))
 
         def move_accepted():
             # CALL ME WHEN MOVE IS ACCEPTED
@@ -1094,7 +1093,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
                     # TRY AGAIN
                     Till(seconds=5).wait()
                     response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-                    result = json2value(utf82unicode(response.content))
+                    result = json2value(response.content.decode('utf8'))
                     if response.status_code in [200, 201] and result.acknowledged:
                         move_failures = move_accepted()
             except Exception as e:
@@ -1117,7 +1116,7 @@ def cancel(path, shard):
         "node": shard.node.name
     }}]}
     result = json2value(
-        utf82unicode(http.post(path + "/_cluster/reroute", json=json).content)
+        http.post(path + "/_cluster/reroute", json=json).content.decode('utf8')
     )
     if not result.acknowledged:
         main_reason = strings.between(result.error, "[NO", "]")
@@ -1212,7 +1211,7 @@ def main():
     Log.start(settings.debug)
 
     constants.set(settings.constants)
-    path = settings.elasticsearch.host + ":" + text_type(settings.elasticsearch.port)
+    path = settings.elasticsearch.host + ":" + text(settings.elasticsearch.port)
 
     try:
         # response = http.put(

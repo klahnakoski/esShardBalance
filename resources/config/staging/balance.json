@@ -36,6 +36,11 @@
             "shards": 1
         },
         {
+            "name": ".tasks",
+            "zone": "spot",
+            "shards": 1
+        },
+        {
             "name": "saved_queries*",
             "zone": "spot",
             "shards": 5
@@ -94,7 +99,7 @@
         "debug": true
     },
     "constants": {
-        "pyLibrary.env.http.default_headers": {
+        "mo_http.http.default_headers": {
             "referer": "https://wiki.mozilla.org/Auto-tools/Projects/ActiveData",
             "Content-Type": "application/json"
         },
