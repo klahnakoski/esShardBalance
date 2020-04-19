@@ -22,7 +22,7 @@ than others, so more replicas can be stored there
 These features allow us to run a big cluster, at a reasonable price, on a 
 heterogeneous collection of AWS spot nodes.
 
-## Important
+## Configuration
 
 The `esShardBalnacer` messes with ElasticSearch zone awareness: Turning it off when shard placement breaks zone rules. Zone awareness is turn back on when it is finished a round of moves. There are two ways to ensure this works properly, both will use `IDENTICAL_NODE_ATTRIBUTE` constant.
 
