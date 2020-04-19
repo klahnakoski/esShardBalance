@@ -24,13 +24,27 @@ heterogeneous collection of AWS spot nodes.
 
 ## Important
 
-ElasticSearch zone awareness and shard balancing must be turned off. 
-esShardBalancer will attempt to do this for you at startup, but it is best
-your config file has the following settings:
+The `esShardBalnacer` messes with ElasticSearch zone awareness: Turning it off when shard placement breaks zone rules. Zone awareness is turn back on when it is finished a round of moves. There are two ways to ensure this works properly, both will use `IDENTICAL_NODE_ATTRIBUTE` constant.
+
+#### Common node attribute
+
+All nodes must have an common attribute/value pair:
+
+    node.attr.cluster: myCluster
+
+This is used to mark all nodes in a single zone, which effectively the same as turning off zone awareness.  If your nodes are already setup, you might be lucky to have a common attribute set already. 
+
+    IDENTICAL_NODE_ATTRIBUTE = "xpack.installed"
+    
+
+#### Ensure awareness is turned off
+
+If you are configuring new nodes, you ensure the zone awareness is off. Notice the `awareness` attributes are blank. 
 
     cluster.routing.allocation.enable: none
     cluster.routing.allocation.awareness.attributes: 
     cluster.routing.allocation.awareness.force.zone.values:
 
-Notice the `awareness` attribute are blank 
+If awareness is off in the config files, then a common attribute/value is not required:
 
+    IDENTICAL_NODE_ATTRIBUTE = ""

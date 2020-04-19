@@ -11,7 +11,6 @@ from __future__ import absolute_import, division, unicode_literals
 
 import json
 from collections import Mapping
-from contextlib import contextmanager
 from copy import copy
 
 import boto
@@ -218,14 +217,14 @@ def assign_shards(settings):
             # COULD NOT BE FOUND
             current_moving_shards.remove(m)
 
-    if red_shards:
-        Log.warning("Cluster is RED")
-        # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
-        # ALLOCATE SHARDS INSTEAD
-        find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
-    else:
-        # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
-        clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
+    # if red_shards:
+    #     Log.warning("Cluster is RED")
+    #     # DO NOT SCRUB WHEN WE ARE MISSING SHARDS
+    #     # ALLOCATE SHARDS INSTEAD
+    #     find_and_allocate_shards(nodes, uuid_to_index_name, settings, red_shards)
+    # else:
+    #     # SCRUB THE NODE DIRECTORIES SO THERE IS ROOM
+    #     clean_out_unused_shards(nodes, shards, uuid_to_index_name, settings)
 
     # AN "ALLOCATION" IS THE SET OF SHARDS FOR ONE INDEX ON ONE NODE
     # CALCULATE HOW MANY SHARDS SHOULD BE IN EACH ALLOCATION
@@ -604,8 +603,10 @@ def assign_shards(settings):
             num=total_moves,
         )
 
-    _allocate(relocating, path, nodes, shards, red_shards, allocation, settings)
-
+    try:
+        _allocate(relocating, path, nodes, shards, red_shards, allocation, settings)
+    finally:
+        enable_zone_restrictions(path)
 
 local_ip_to_public_ip_map = Null
 
@@ -1067,6 +1068,7 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
 
         if response.status_code in [200, 201] and result.acknowledged:
             move_failures = move_accepted()
+            continue
 
         if move_failures >= MAX_MOVE_FAILURES:
             Log.warning("{{num}} consecutive failed moves. Starting over.", num=move_failures)
@@ -1087,15 +1089,16 @@ def _allocate(relocating, path, nodes, all_shards, red_shards, allocation, setti
             lost_node_name = strings.between(result.error, "failed to resolve [", "]").strip()
             Log.warning("Allocation failed: Lost node during allocate {{node}}", node=lost_node_name)
             nodes[lost_node_name].zone = None
-        elif "there are too many copies of the shard" in main_reason:
+        elif main_reason and "there are too many copies of the shard" in main_reason:
             try:
-                with disable_zone_restrications(path):
-                    # TRY AGAIN
-                    Till(seconds=5).wait()
-                    response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
-                    result = json2value(response.content.decode('utf8'))
-                    if response.status_code in [200, 201] and result.acknowledged:
-                        move_failures = move_accepted()
+                disable_zone_restrications(path)
+                # TRY AGAIN
+                Till(seconds=5).wait()
+                response = http.post(path + "/_cluster/reroute", json={"commands": [command]})
+                result = json2value(response.content.decode('utf8'))
+                if response.status_code in [200, 201] and result.acknowledged:
+                    move_failures = move_accepted()
+                    continue
             except Exception as e:
                 Log.warning("retry with disabled zone restrictions seems to have failed", cause=e)
 
@@ -1185,28 +1188,40 @@ def text_to_bytes(size):
     except Exception as e:
         Log.error("not expected", cause=e)
 
-@contextmanager
+
+zone_restrictions_on = True  # KEEP THIS TRUE SO QUERIES GO TO spot, NOT backup NDOES
+
+
 def disable_zone_restrications(path):
-    with Timer("Disable zone restrictions"):
-        result = http.put(
-            path + "/_cluster/settings",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({
-                "transient": {"cluster.routing.allocation.awareness.attributes": IDENTICAL_NODE_ATTRIBUTE}
-            })
-        )
-    yield
-    with Timer("Enable zone restrictions"):
-        result = http.put(
-            path + "/_cluster/settings",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({
-                "transient": {"cluster.routing.allocation.awareness.attributes": "zone"}
-            })
-        )
+    global zone_restrictions_on
+    if zone_restrictions_on:
+        with Timer("Disable zone restrictions"):
+            http.put(
+                path + "/_cluster/settings",
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({
+                    "transient": {"cluster.routing.allocation.awareness.attributes": IDENTICAL_NODE_ATTRIBUTE}
+                })
+            )
+    zone_restrictions_on = False
+
+
+def enable_zone_restrictions(path):
+    global zone_restrictions_on
+    if not zone_restrictions_on:
+        with Timer("Enable zone restrictions"):
+            http.put(
+                path + "/_cluster/settings",
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({
+                    "transient": {"cluster.routing.allocation.awareness.attributes": "zone"}
+                })
+            )
+    zone_restrictions_on = True
 
 
 def main():
+    global zone_restrictions_on
     settings = startup.read_settings()
     Log.start(settings.debug)
 
@@ -1247,6 +1262,7 @@ def main():
             )
 
         )
+        zone_restrictions_on = True
         Log.note("DISABLE SHARD MOVEMENT: {{result}}", result=response.all_content)
 
         response = http.put(
