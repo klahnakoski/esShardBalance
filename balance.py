@@ -1253,8 +1253,8 @@ def main():
                         "cluster.routing.allocation.enable": "none",
                         "cluster.routing.allocation.awareness.attributes": None,
                         "cluster.routing.allocation.awareness.force.zone.values": None,
-                        "cluster.routing.allocation.balance.shard": 0.0,
-                        "cluster.routing.allocation.balance.index": 0.0,
+                        "cluster.routing.allocation.balance.shard": 0.01,
+                        "cluster.routing.allocation.balance.index": 0.01,
                         "cluster.routing.allocation.balance.threshold": 1000,
                         "cluster.routing.use_adaptive_replica_selection": True
                     }
